@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: none !important;
+    cursor: default !important;
+  }
+
+  html, body {
+    background: transparent;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+    pointer-events: none !important;
+    cursor: default !important;
+  }
+
+  /* Container Bar */
+  .hud-wrapper {
+    position: relative;
+    width: 380px;
+    height: 56px;
+    background: rgba(14, 16, 22, 0.88);
+    backdrop-filter: blur(32px) saturate(190%);
+    -webkit-backdrop-filter: blur(32px) saturate(190%);
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    box-shadow: 0 0 1px rgba(255, 255, 255, 0.25) inset;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+    transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
+  }
+
+  .hud-wrapper.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  /* Swan Icon */
+  .swan-icon {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    margin-right: 12px;
+    filter: drop-shadow(0 0 6px rgba(0, 210, 255, 0.4));
+    transform: scaleX(-1);
+    transition: transform 0.3s ease;
+  }
+
+  .swan-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Wave Canvas */
+  .wave-container {
+    position: relative;
+    flex: 1;
+    height: 38px;
+    overflow: hidden;
+    border-radius: 19px;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* Status and Subtitle */
+  .info-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-left: 12px;
+    max-width: 140px;
+  }
+
+  .status-text {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #00d2ff;
+    text-shadow: 0 0 10px rgba(0, 210, 255, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .subtitle-text {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.85);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+    letter-spacing: 0.15px;
+  }
+
+  /* State color modifications */
+  .state-listening .status-text { color: #00f2fe; text-shadow: 0 0 10px rgba(0, 242, 254, 0.7); }
+  .state-thinking .status-text { color: #c084fc; text-shadow: 0 0 10px rgba(192, 132, 252, 0.7); }
+  .state-speaking .status-text { color: #38bdf8; text-shadow: 0 0 10px rgba(56, 189, 248, 0.7); }
+</style>
+</head>
+<body>
+
+<div class="hud-wrapper" id="hud">
+  <div class="swan-icon" id="swanIcon">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
+      <path fill="#FFFFFF" d="M3.427 7.034c-1.049-1.086-1.535-2.903.2-5.106s9.144-2.87 8.61 4.939c-.067 1.835-.768 4.605-2.603 8.376-.467.968-1.268 2.536-1.602 4.839.968-.801 3.904-2.236 6.908-1.835 3.003.4 18.054 7.142 21.057 4.305.1 1.168-3.637 12.781-18.555 12.781S.122 27.824.122 24.421s.868-5.173 3.371-7.542S9.835 8.87 8.099 6.367c-.367.667-2.769 2.636-4.672.667z"/>
+      <path fill="#CCD6DD" d="M10.202 26.557c-.567 2.136 2.967 6.589 8.71 6.608 8.385.028 12.881-4.705 15.384-10.746-2.436-1.068-13.826-3.254-17.129-1.919s-3.667 1.583-7.298 3.52c1.167.201.3 2.537.333 2.537z"/>
+      <path fill="#292F33" d="M5.475 7.377c.098-.085.155-.187.155-.309 0-.968.067-2.503.4-2.903.785.083 1.118-.735.618-1.269s-1.418.067-1.352.634c-1.414-.377-2.442-.142-2.784.912-.104 1.066.302 1.957.915 2.592.295.305 1.776.427 2.048.343z"/>
+      <path fill="#CCD6DD" d="M7.719 4.762c-.004.986-.74 2.149-2.244 2.614-.159.136-.429.223-.751.268.131.088.268.165.411.23 1.41.096 2.704-1.032 2.965-1.507.006.008.008.018.013.026.03-.89-.394-1.631-.394-1.631z"/>
+      <path fill="#E1E8ED" d="M9.301 24.087c.033-1.468 1.368-7.375 9.077-7.542 7.709-.167 8.31 4.672 14.416-.467-.1 1.301-2.269 15.017-13.849 15.017-9.21 0-9.678-5.54-9.644-7.008z"/>
+      <path fill="#F4900C" d="M.754 10.571c.85-.264 3.775-1.968 4.843-3.17.3-.334-1.495-2.405-3.164-2.639.1.534.06 2.572-1.575 4.374-.434.334-1.026 1.602-.104 1.435z"/>
+    </svg>
+  </div>
+
+  <div class="wave-container">
+    <canvas id="waveCanvas"></canvas>
+  </div>
+
+  <div class="info-container">
+    <div class="status-text" id="statusText">SWAN</div>
+    <div class="subtitle-text" id="subtitleText">Ready</div>
+  </div>
+</div>
+
+<script>
+  const hud = document.getElementById('hud');
+  const statusText = document.getElementById('statusText');
+  const subtitleText = document.getElementById('subtitleText');
+  const canvas = document.getElementById('waveCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let width, height;
+  function resize() {
+    width = canvas.parentElement.clientWidth;
+    height = canvas.parentElement.clientHeight;
+    canvas.width = width * window.devicePixelRatio;
+    canvas.height = height * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Wave physics state
+  let audioEnergy = 0.05;
+  let targetEnergy = 0.05;
+  let phase = 0;
+  let currentState = 'idle';
+
+  function setAudioEnergy(energy) {
+    targetEnergy = Math.max(0.04, Math.min(1.0, energy * 3.8));
+  }
+
+  function setState(state, statusStr, subtitleStr) {
+    currentState = state;
+    hud.className = 'hud-wrapper visible state-' + state;
+    if (statusStr) statusText.textContent = statusStr;
+    if (subtitleStr !== undefined) subtitleText.textContent = subtitleStr;
+  }
+
+  function showHUD(state, statusStr, subtitleStr) {
+    setState(state, statusStr, subtitleStr);
+    hud.classList.add('visible');
+  }
+
+  function hideHUD() {
+    hud.classList.remove('visible');
+  }
+
+  window.setAudioEnergy = setAudioEnergy;
+  window.setState = setState;
+  window.showHUD = showHUD;
+  window.hideHUD = hideHUD;
+
+  // Animation Loop
+  function drawWave(t, yOffset, amplitude, frequency, color, composite='source-over') {
+    ctx.save();
+    ctx.globalCompositeOperation = composite;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+
+    const midY = height / 2 + yOffset;
+    for (let x = 0; x <= width; x += 3) {
+      // Gaussian window envelope (waves taper smoothly at edges)
+      const nx = (x / width) * 2 - 1;
+      const envelope = Math.exp(-3.2 * (nx * nx));
+      
+      const wave1 = Math.sin(x * frequency + t) * amplitude;
+      const wave2 = Math.cos(x * (frequency * 1.5) - t * 0.7) * (amplitude * 0.4);
+      const y = midY + (wave1 + wave2) * envelope;
+      
+      ctx.lineTo(x, y);
+    }
+
+    ctx.lineTo(width, height);
+    ctx.lineTo(0, height);
+    ctx.closePath();
+
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function animate() {
+    // Smooth energy dampening
+    audioEnergy += (targetEnergy - audioEnergy) * 0.14;
+    phase += 0.045 + audioEnergy * 0.08;
+
+    ctx.clearRect(0, 0, width, height);
+
+    const amp = 4 + audioEnergy * 22;
+
+    // Layer 1: Deep Cyan / Azure (Back)
+    const grad1 = ctx.createLinearGradient(0, 0, width, 0);
+    grad1.addColorStop(0, 'rgba(0, 180, 255, 0.20)');
+    grad1.addColorStop(0.5, 'rgba(120, 60, 255, 0.25)');
+    grad1.addColorStop(1, 'rgba(0, 230, 255, 0.20)');
+    drawWave(phase * 0.85, 0, amp * 0.85, 0.038, grad1);
+
+    // Layer 2: Electric Purple / Magenta (Mid)
+    const grad2 = ctx.createLinearGradient(0, 0, width, 0);
+    grad2.addColorStop(0, 'rgba(168, 85, 247, 0.30)');
+    grad2.addColorStop(0.5, 'rgba(0, 229, 255, 0.35)');
+    grad2.addColorStop(1, 'rgba(236, 72, 153, 0.25)');
+    drawWave(-phase * 1.1 + 1.2, 0, amp * 1.05, 0.045, grad2);
+
+    // Layer 3: Vibrant Turquoise & Crystal Line (Front)
+    const grad3 = ctx.createLinearGradient(0, 0, width, 0);
+    grad3.addColorStop(0, 'rgba(0, 242, 254, 0.50)');
+    grad3.addColorStop(0.5, 'rgba(79, 70, 229, 0.50)');
+    grad3.addColorStop(1, 'rgba(56, 189, 248, 0.55)');
+    drawWave(phase * 1.25 + 2.5, 0, amp * 1.25, 0.052, grad3);
+
+    // Front crest ridge glow line
+    ctx.save();
+    ctx.beginPath();
+    const midY = height / 2;
+    for (let x = 0; x <= width; x += 3) {
+      const nx = (x / width) * 2 - 1;
+      const envelope = Math.exp(-3.2 * (nx * nx));
+      const wave = Math.sin(x * 0.052 + phase * 1.25 + 2.5) * (amp * 1.25) * envelope;
+      if (x === 0) ctx.moveTo(x, midY + wave);
+      else ctx.lineTo(x, midY + wave);
+    }
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00f2fe';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.restore();
+
+    requestAnimationFrame(animate);
+  }
+
+  animate();
+</script>
+
+</body>
+</html>

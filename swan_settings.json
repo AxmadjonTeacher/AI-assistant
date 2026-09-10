@@ -1,0 +1,8 @@
+{
+  "language": "en",
+  "wake_sensitivity": "medium",
+  "mode": "command",
+  "voice_name": "Kore",
+  "accent": "neutral",
+  "respectful_address": true
+}
