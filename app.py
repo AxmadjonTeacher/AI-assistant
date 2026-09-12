@@ -22,9 +22,47 @@ def acquire_single_instance_lock() -> bool:
         return False
 
 from Cocoa import (
-    NSApplication, NSDate, NSDefaultRunLoopMode, NSEventMaskAny
+    NSApplication, NSDate, NSDefaultRunLoopMode, NSEventMaskAny,
+    NSMenu, NSMenuItem, NSObject
 )
+import objc
 from PyObjCTools import AppHelper
+
+class SwanAppDelegate(NSObject):
+    app_ref = None
+
+    def applicationDockMenu_(self, sender):
+        menu = NSMenu.alloc().init()
+        item_settings = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Settings...", "openSettingsFromDock:", "")
+        item_settings.setTarget_(self)
+        menu.addItem_(item_settings)
+
+        menu.addItem_(NSMenuItem.separatorItem())
+
+        item_quit = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit Swan", "quitFromDock:", "q")
+        item_quit.setTarget_(self)
+        menu.addItem_(item_quit)
+        return menu
+
+    @objc.IBAction
+    def openSettingsFromDock_(self, sender):
+        if self.app_ref:
+            self.app_ref._open_settings()
+
+    @objc.IBAction
+    def quitFromDock_(self, sender):
+        if self.app_ref:
+            self.app_ref._quit()
+
+    def applicationShouldHandleReopen_hasVisibleWindows_(self, sender, flag):
+        if self.app_ref:
+            self.app_ref._open_settings()
+        return True
+
+    def applicationShouldTerminate_(self, sender):
+        if self.app_ref:
+            self.app_ref._quit()
+        return 1
 
 from config import config
 from audio_manager import AudioManager
@@ -41,8 +79,11 @@ class SwanApp:
     def __init__(self):
         # 1. Cocoa Application
         self.cocoa_app = NSApplication.sharedApplication()
-        # Set activation policy to accessory so it can run cleanly in background
-        self.cocoa_app.setActivationPolicy_(1)
+        # Set activation policy to regular (0) so Dock shows proper Quit and Settings
+        self.cocoa_app.setActivationPolicy_(0)
+        self.app_delegate = SwanAppDelegate.alloc().init()
+        self.app_delegate.app_ref = self
+        self.cocoa_app.setDelegate_(self.app_delegate)
         self.cocoa_app.finishLaunching()
 
         # 2. UI Components
@@ -327,11 +368,12 @@ class SwanApp:
         self.menu_bar.set_status("Ready (Listening for 'Hey Swan')" if new_state else "Wake Word: OFF")
 
     def _quit(self):
-        print(" [DEBUG] _quit() invoked from MenuBar")
+        print(" [DEBUG] _quit() invoked from MenuBar/Dock")
         self._running = False
         if self._loop and self._loop.is_running():
             asyncio.run_coroutine_threadsafe(self.shutdown(), self._loop)
-        AppHelper.callLater(0.5, AppHelper.stopEventLoop)
+        AppHelper.callLater(0.3, AppHelper.stopEventLoop)
+        AppHelper.callLater(0.5, lambda: NSApplication.sharedApplication().terminate_(None))
 
     def _handle_mode_change(self, new_mode: str):
         config.mode = new_mode
