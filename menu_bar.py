@@ -62,6 +62,11 @@ class MenuBarActionTarget(NSObject):
             self.on_respectful_toggle()
 
     @objc.IBAction
+    def askSwan_(self, sender):
+        if hasattr(self, "on_ask_swan") and self.on_ask_swan:
+            self.on_ask_swan()
+
+    @objc.IBAction
     def openSettings_(self, sender):
         if hasattr(self, "on_open_settings") and self.on_open_settings:
             self.on_open_settings()
@@ -74,6 +79,7 @@ class MenuBarActionTarget(NSObject):
 class SwanMenuBar:
     def __init__(
         self,
+        on_ask_swan: Optional[Callable[[], None]] = None,
         on_mode_toggle: Optional[Callable[[], None]] = None,
         on_wake_toggle: Optional[Callable[[], None]] = None,
         on_language_change: Optional[Callable[[str], None]] = None,
@@ -83,6 +89,7 @@ class SwanMenuBar:
         on_open_settings: Optional[Callable[[], None]] = None,
         on_quit: Optional[Callable[[], None]] = None
     ):
+        self.on_ask_swan = on_ask_swan
         self.on_mode_toggle = on_mode_toggle
         self.on_wake_toggle = on_wake_toggle
         self.on_language_change = on_language_change
@@ -115,6 +122,7 @@ class SwanMenuBar:
         self.status_item.button().setTitle_("🦢")
 
         self.target = MenuBarActionTarget.alloc().init()
+        self.target.on_ask_swan = self.on_ask_swan
         self.target.on_mode_toggle = self.on_mode_toggle
         self.target.on_wake_toggle = self.on_wake_toggle
         self.target.on_language_change = self.on_language_change
@@ -132,6 +140,13 @@ class SwanMenuBar:
         )
         self.status_menu_item.setEnabled_(False)
         self.menu.addItem_(self.status_menu_item)
+
+        # Item 1.5: Ask Swan (Show Liquid Pill)
+        self.ask_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "🎙️ Ask Swan (Show Liquid Pill)", objc.selector(self.target.askSwan_, signature=b"v@:@"), ""
+        )
+        self.ask_menu_item.setTarget_(self.target)
+        self.menu.addItem_(self.ask_menu_item)
 
         self.menu.addItem_(NSMenuItem.separatorItem())
 

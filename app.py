@@ -33,6 +33,10 @@ class SwanAppDelegate(NSObject):
 
     def applicationDockMenu_(self, sender):
         menu = NSMenu.alloc().init()
+        item_ask = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Ask Swan", "askSwanFromDock:", "")
+        item_ask.setTarget_(self)
+        menu.addItem_(item_ask)
+
         item_settings = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Settings...", "openSettingsFromDock:", "")
         item_settings.setTarget_(self)
         menu.addItem_(item_settings)
@@ -45,6 +49,11 @@ class SwanAppDelegate(NSObject):
         return menu
 
     @objc.IBAction
+    def askSwanFromDock_(self, sender):
+        if self.app_ref:
+            self.app_ref.trigger_assistant()
+
+    @objc.IBAction
     def openSettingsFromDock_(self, sender):
         if self.app_ref:
             self.app_ref._open_settings()
@@ -55,8 +64,9 @@ class SwanAppDelegate(NSObject):
             self.app_ref._quit()
 
     def applicationShouldHandleReopen_hasVisibleWindows_(self, sender, flag):
+        # Trigger assistant (liquid pill) immediately when Dock icon is clicked!
         if self.app_ref:
-            self.app_ref._open_settings()
+            self.app_ref.trigger_assistant()
         return True
 
     def applicationShouldTerminate_(self, sender):
@@ -99,6 +109,7 @@ class SwanApp:
         )
         self.hud = LiquidHUDWindow()
         self.menu_bar = SwanMenuBar(
+            on_ask_swan=self.trigger_assistant,
             on_mode_toggle=self._toggle_mode,
             on_wake_toggle=self._toggle_wake_word,
             on_language_change=self._handle_language_change,
@@ -108,6 +119,10 @@ class SwanApp:
             on_open_settings=self._open_settings,
             on_quit=self._quit
         )
+
+        # Greet on launch so user visually sees the liquid pill immediately
+        AppHelper.callLater(0.5, lambda: self.hud.show(state="wake", status="SWAN", subtitle="Tayyorman, Janob"))
+        AppHelper.callLater(2.8, lambda: self.hud.hide())
 
         # 3. Audio & AI Core
         self.audio_manager = AudioManager()
@@ -366,6 +381,17 @@ class SwanApp:
         label = "Wake Word: ON" if new_state else "Wake Word: OFF"
         print(f"🎙️ [Wake Word Toggled] {label}", flush=True)
         self.menu_bar.set_status("Ready (Listening for 'Hey Swan')" if new_state else "Wake Word: OFF")
+
+    def trigger_assistant(self):
+        print("🎙️ [Trigger Assistant] Summoning Swan Liquid Pill...", flush=True)
+        if not self._running:
+            return
+        if self._busy:
+            self.hud.show(state="speaking", status="SWAN", subtitle=self._active_action or "Gapirmoqda...")
+            return
+
+        if self._loop and self._loop.is_running():
+            asyncio.run_coroutine_threadsafe(self._on_wake_word_triggered(suffix="", has_immediate_command=False), self._loop)
 
     def _quit(self):
         print(" [DEBUG] _quit() invoked from MenuBar/Dock")
