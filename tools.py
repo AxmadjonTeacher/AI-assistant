@@ -1150,17 +1150,22 @@ def switch_tab(
                 return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
             end if
 
-            -- Search by name/title
+            -- Search by name/title across all open windows
             if "{clean_target}" is not "" then
-                repeat with i from 1 to totalTabs
-                    set tTitle to (title of tab i of win) as string
-                    set tUrl to (URL of tab i of win) as string
-                    ignoring case
-                        if (tTitle contains "{clean_target}") or (tUrl contains "{clean_target}") then
-                            set active tab index of win to i
-                            return "success:Switched to tab " & (i as string) & " (" & tTitle & ")"
-                        end if
-                    end ignoring
+                repeat with w in windows
+                    set tabCount to count of tabs of w
+                    repeat with i from 1 to tabCount
+                        set tTitle to (title of tab i of w) as string
+                        set tUrl to (URL of tab i of w) as string
+                        ignoring case
+                            if (tTitle contains "{clean_target}") or (tUrl contains "{clean_target}") then
+                                set active tab index of w to i
+                                set index of w to 1
+                                tell application "{target_browser}" to activate
+                                return "success:Switched to tab " & (i as string) & " (" & tTitle & ")"
+                            end if
+                        end ignoring
+                    end repeat
                 end repeat
             end if
 
@@ -1232,17 +1237,22 @@ def switch_tab(
                 return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
             end if
 
-            -- Search by name
+            -- Search by name across all open windows
             if "{clean_target}" is not "" then
-                repeat with i from 1 to totalTabs
-                    set tName to (name of tab i of win) as string
-                    set tUrl to (URL of tab i of win) as string
-                    ignoring case
-                        if (tName contains "{clean_target}") or (tUrl contains "{clean_target}") then
-                            set current tab of win to tab i of win
-                            return "success:Switched to tab " & (i as string) & " (" & tName & ")"
-                        end if
-                    end ignoring
+                repeat with w in windows
+                    set tabCount to count of tabs of w
+                    repeat with i from 1 to tabCount
+                        set tName to (name of tab i of w) as string
+                        set tUrl to (URL of tab i of w) as string
+                        ignoring case
+                            if (tName contains "{clean_target}") or (tUrl contains "{clean_target}") then
+                                set current tab of w to tab i of w
+                                set index of w to 1
+                                tell application "Safari" to activate
+                                return "success:Switched to tab " & (i as string) & " (" & tName & ")"
+                            end if
+                        end ignoring
+                    end repeat
                 end repeat
             end if
 
@@ -1329,6 +1339,80 @@ def switch_tab(
             return {"status": "error", "message": f"Unsupported action '{act}' for {target_browser}"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+def switch_desktop(
+    desktop_index: Optional[int] = None,
+    direction: Optional[str] = None,
+    action: Optional[str] = "switch"
+) -> Dict[str, Any]:
+    """
+    Switches between macOS virtual desktops (Spaces / Workspaces) or triggers Mission Control.
+    Supports:
+    - desktop_index: 1-based desktop number (1, 2, 3, 4, 5...)
+    - direction: 'next', 'previous'/'prev', 'left', 'right'
+    - action: 'switch', 'mission_control', 'show_desktop'
+    """
+    act = (action or "switch").strip().lower()
+    dir_clean = (direction or "").strip().lower()
+
+    if act in ["mission_control", "spaces", "overview"]:
+        ascript = 'tell application "Mission Control" to launch'
+        try:
+            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            return {"status": "success", "action": "mission_control", "message": "Mission Control ochildi"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    if act in ["show_desktop", "desktop_view"]:
+        ascript = 'tell application "System Events" to key code 103'
+        try:
+            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            return {"status": "success", "action": "show_desktop", "message": "Ish stoli ko'rsatildi"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # Directional switching: Next desktop
+    if dir_clean in ["next", "right", "forward"]:
+        ascript = 'tell application "System Events" to key code 124 using control down'
+        try:
+            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            return {"status": "success", "direction": "next", "message": "Keyingi ish stoliga o'tildi"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # Directional switching: Previous desktop
+    if dir_clean in ["previous", "prev", "left", "back"]:
+        ascript = 'tell application "System Events" to key code 123 using control down'
+        try:
+            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            return {"status": "success", "direction": "previous", "message": "Oldingi ish stoliga o'tildi"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # Numbered desktop index (1..9)
+    if desktop_index is not None:
+        try:
+            idx = int(desktop_index)
+            key_codes = {
+                1: 18, 2: 19, 3: 20, 4: 21, 5: 23,
+                6: 22, 7: 26, 8: 28, 9: 25
+            }
+            if idx in key_codes:
+                ascript = f'tell application "System Events" to key code {key_codes[idx]} using control down'
+                subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+                return {"status": "success", "desktop_index": idx, "message": f"{idx}-ish stoliga o'tildi"}
+            else:
+                return {"status": "error", "message": f"Ish stoli raqami {idx} noto'g'ri (1 dan 9 gacha qo'llab-quvvatlanadi)"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # Default fallback: Next desktop
+    ascript = 'tell application "System Events" to key code 124 using control down'
+    try:
+        subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+        return {"status": "success", "direction": "next", "message": "Keyingi ish stoliga o'tildi"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 def switch_mode(target_mode: str) -> Dict[str, Any]:
     """Switches the assistant between 'command' mode and 'chat' mode."""
@@ -1731,6 +1815,11 @@ TOOL_HANDLERS = {
     "change_tab": switch_tab,
     "select_tab": switch_tab,
     "tab_control": switch_tab,
+    "switch_desktop": switch_desktop,
+    "switch_space": switch_desktop,
+    "change_desktop": switch_desktop,
+    "change_space": switch_desktop,
+    "switch_workspace": switch_desktop,
     "switch_mode": switch_mode,
     "system_control": system_control,
     "get_current_time": get_current_time,
@@ -2163,6 +2252,33 @@ def get_jarvis_tools() -> list[types.Tool]:
             )
         ),
         types.FunctionDeclaration(
+            name="switch_desktop",
+            description=(
+                "Switches between macOS virtual desktops / Spaces / Workspaces or launches Mission Control. "
+                "Use this tool whenever the user asks to switch desktops or spaces (e.g. '2-ish stoliga o't', "
+                "'3-ish stoliga o't', 'keyingi ish stoliga o't', 'oldingi ish stoli', 'switch to 2nd desktop', "
+                "'next space', 'previous desktop', 'ish stollarini almashtir', 'Mission Control'). "
+                "Note: For browser tabs, use switch_tab; for macOS desktops/spaces, use switch_desktop."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "desktop_index": types.Schema(
+                        type="INTEGER",
+                        description="The 1-based index of the desktop to switch to (e.g. 1 for 1st desktop, 2 for 2nd desktop, 3 for 3rd desktop)."
+                    ),
+                    "direction": types.Schema(
+                        type="STRING",
+                        description="Optional direction: 'next' (or 'right'), 'previous' (or 'left')."
+                    ),
+                    "action": types.Schema(
+                        type="STRING",
+                        description="Optional action: 'switch' (default), 'mission_control', or 'show_desktop'."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
             name="dismiss_assistant",
             description=(
                 "Immediately hides and dismisses the assistant from the screen. "
@@ -2210,3 +2326,5 @@ def get_jarvis_tools() -> list[types.Tool]:
         )
     ]
     return [types.Tool(function_declarations=declarations)]
+
+get_gemini_tools = get_jarvis_tools

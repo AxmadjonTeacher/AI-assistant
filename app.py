@@ -592,6 +592,21 @@ class SwanApp:
                 return "Opening New Tab..."
             elif act == "close":
                 return "Closing Tab..."
+        elif name in ["switch_desktop", "switch_space", "change_desktop", "change_space", "switch_workspace"]:
+            idx = args.get("desktop_index")
+            dir_val = (args.get("direction") or "").lower()
+            act = (args.get("action") or "").lower()
+            if idx:
+                return f"Switching to Desktop {idx}..."
+            elif dir_val in ["next", "right", "forward"]:
+                return "Next Desktop..."
+            elif dir_val in ["previous", "prev", "left", "back"]:
+                return "Previous Desktop..."
+            elif act in ["mission_control", "spaces", "overview"]:
+                return "Mission Control..."
+            elif act in ["show_desktop", "desktop_view"]:
+                return "Showing Desktop..."
+            return "Switching Desktop..."
         elif name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
             return "Dismissing..."
         else:
@@ -740,7 +755,9 @@ class SwanApp:
                 if has_immediate_command and turn_number == 1:
                     has_command = self.audio_manager.has_speech(pcm_bytes, energy_threshold=0.015, min_speech_duration=0.25)
                 else:
-                    has_command = live_speech and len(pcm_bytes) >= 3200
+                    has_command = live_speech and len(pcm_bytes) >= 9600 and self.audio_manager.has_speech(
+                        pcm_bytes, energy_threshold=0.016, min_speech_duration=0.28
+                    )
 
                 if has_command:
                     last_reply = await self._process_gemini_turn(pcm_bytes)
@@ -761,7 +778,7 @@ class SwanApp:
                     if was_interrupted:
                         print(f"🛑 [Interruption Closed] Swan stopped by user with no further command. Dismissing.", flush=True)
                     else:
-                        print(f"⏱️ [Conversation Finished] Completed {turn_number - 1} turns. Dismissing.", flush=True)
+                        print(f"⏱️ [Silence/Inactivity] No speech command detected (completed {turn_number - 1} turns). Dismissing.", flush=True)
                     conversation_active = False
 
             # Auto-hide HUD when conversation ends
@@ -844,12 +861,12 @@ class SwanApp:
                     else:
                         effective_pause = 0.90
                     if time.time() - last_speech_time > effective_pause:
-                        if speech_len < 0.22:
-                            # False start / breath / click - reset and keep waiting for real speech
+                        if speech_len < 0.35:
+                            # False start / breath / click / mic tap - reset and keep waiting for real speech
                             speech_started = False
                             speech_frames = 0
                             continue
-                        print(f"🎙️ [End of Speech] Natural pause detected ({effective_pause:.2f}s, ambient floor: {ambient_floor:.3f}).", flush=True)
+                        print(f"🎙️ [End of Speech] Natural pause detected ({effective_pause:.2f}s, speech len: {speech_len:.2f}s, ambient floor: {ambient_floor:.3f}).", flush=True)
                         break
                 elif time.time() - start_time > initial_timeout:
                     # User said nothing

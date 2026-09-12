@@ -27,8 +27,7 @@ DEFAULT_MEMORY: Dict[str, Any] = {
         "Ismi: Ahmet (Janob)",
         "Tizim: macOS",
         "Til: O'zbek tili (mutlaq)",
-        "Musiqa: Spotify / Lofi",
-        "Ish uslubi: Aniq, tezkor buyruqlar va tablar boshqaruvi"
+        "Ish uslubi: Aniq, tezkor buyruqlar, ish stollari va tablar boshqaruvi"
     ],
     "last_updated": datetime.now().isoformat()
 }
