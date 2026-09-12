@@ -1,5 +1,6 @@
 import subprocess
 import os
+import asyncio
 import re
 import shutil
 import glob
@@ -12,6 +13,45 @@ from google.genai import types
 
 # Callback to notify app of mode changes
 mode_change_callback: Optional[Callable[[str], None]] = None
+
+# Callback to notify app of dismissal
+dismiss_callback: Optional[Callable[[], None]] = None
+
+def set_dismiss_callback(cb: Callable[[], None]):
+    global dismiss_callback
+    dismiss_callback = cb
+
+def dismiss_assistant(reason: Optional[str] = None) -> Dict[str, Any]:
+    """Dismisses and hides the assistant from the screen immediately."""
+    global dismiss_callback
+    if dismiss_callback:
+        dismiss_callback()
+    return {"status": "success", "message": "Assistant dismissed and hidden."}
+
+def remember_user_fact(fact: str, category: Optional[str] = "preference") -> Dict[str, Any]:
+    """Stores a fact or preference about the user into Swan's long-term memory."""
+    try:
+        from memory_manager import memory_manager
+        success = memory_manager.add_fact(fact, category)
+        if success:
+            return {"status": "success", "message": f"Fakt xotiraga saqlandi: '{fact}'"}
+        else:
+            return {"status": "success", "message": f"Fakt allaqachon xotirada mavjud: '{fact}'"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def get_user_memory() -> Dict[str, Any]:
+    """Retrieves what Swan currently remembers about the user."""
+    try:
+        from memory_manager import memory_manager
+        return {
+            "status": "success",
+            "owner": memory_manager.get_owner_info(),
+            "preferences": memory_manager.get_preferences(),
+            "learned_facts": memory_manager.get_learned_facts()
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 APP_SEARCH_DIRS = [
     "/Applications",
@@ -859,6 +899,437 @@ def take_screenshot() -> Dict[str, Any]:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+def analyze_screen(query: Optional[str] = None) -> Dict[str, Any]:
+    """Captures the user's screen and uses Gemini Vision to inspect, analyze, and point out UI elements, code, windows, or errors."""
+    q = (query or "Ekranda nima ko'rinmoqda va qanday muhim ma'lumotlar bor?").strip()
+    tmp_path = "/tmp/swan_screen.jpg"
+    tmp_small = "/tmp/swan_screen_small.jpg"
+    try:
+        # Capture full display with cursor
+        res = subprocess.run(["/usr/sbin/screencapture", "-x", "-C", "-t", "jpg", tmp_path], capture_output=True, timeout=5.0)
+        if res.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            return {
+                "status": "error",
+                "message": "Ekran tasvirini olib bo'lmadi. Iltimos, macOS Sozlamalari -> Maxfiylik va Xavfsizlik -> Ekranni yozib olish (Screen Recording) ruxsatini tekshiring."
+            }
+
+        # Downscale for rapid transmission
+        try:
+            from PIL import Image
+            img = Image.open(tmp_path)
+            img.thumbnail((1280, 720))
+            img.save(tmp_small, quality=75)
+            with open(tmp_small, "rb") as f:
+                img_bytes = f.read()
+        except Exception:
+            with open(tmp_path, "rb") as f:
+                img_bytes = f.read()
+
+        from google import genai
+        from google.genai import types
+        from config import config
+
+        vision_client = genai.Client(api_key=config.api_key)
+        system_prompt = (
+            "Siz Swan nomli macOS AI agentisiz. Foydalanuvchining ekran tasvirini sinchiklab tahlil qiling. "
+            f"Foydalanuvchi so'rovi: '{q}'. "
+            "Ekranni diqqat bilan o'rganing: asosiy faol oyna, dasturlar, veb-sahifalar, xatoliklar (error), matn yoki kodlarni aniqlang. "
+            "QAT'IY TALABLAR: "
+            "1. Faqat toza, go'zal va adabiy O'ZBEK TILIDA javob bering. "
+            "2. Ovozli yordamchi ravon o'qib berishi uchun yulduzchalar (**), tire (-), qavslar yoki kod belgilarini mutlaqo ishlatmang. "
+            "3. Gaplar juda ixcham, ravon va mohiyatga yo'naltirilgan bo'lsin (ko'pi bilan 2 ta aniq va chiroyli gap). "
+            "4. Javobni bevosita ko'ringan narsaning mohiyatidan boshlang (masalan: 'Ekranda Safari orqali YouTube sahifasi ochiq...', 'Ekranda dasturlash kodida xatolik ko'rinmoqda...')."
+        )
+
+        try:
+            resp = vision_client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=[
+                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                    system_prompt
+                ]
+            )
+        except Exception:
+            resp = vision_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                    system_prompt
+                ]
+            )
+        return {
+            "status": "success",
+            "analysis": resp.text,
+            "message": "Screen analyzed successfully"
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Screen analysis failed: {e}"}
+    finally:
+        for p in (tmp_path, tmp_small):
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+
+def execute_shell(command: str) -> Dict[str, Any]:
+    """Executes a shell command (zsh/bash) on macOS to inspect, automate, run scripts, or manage the computer."""
+    if not command or not command.strip():
+        return {"status": "error", "message": "Command is empty"}
+    clean_cmd = command.strip()
+    try:
+        res = subprocess.run(
+            clean_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+            executable="/bin/zsh",
+            cwd=os.path.expanduser("~")
+        )
+        stdout = res.stdout.strip()
+        stderr = res.stderr.strip()
+        return {
+            "status": "success" if res.returncode == 0 else "error",
+            "returncode": res.returncode,
+            "stdout": stdout[:3000] if stdout else "",
+            "stderr": stderr[:1500] if stderr else "",
+            "message": f"Command executed with exit code {res.returncode}"
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "message": "Command timed out after 30 seconds"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def read_file(filepath: str, max_lines: int = 150) -> Dict[str, Any]:
+    """Reads the text content of a file on the computer."""
+    p = os.path.expanduser(filepath.strip())
+    if not os.path.exists(p):
+        return {"status": "error", "message": f"File does not exist: {filepath}"}
+    if os.path.isdir(p):
+        try:
+            items = os.listdir(p)[:60]
+            return {"status": "success", "is_directory": True, "items": items, "path": p}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+    try:
+        with open(p, "r", encoding="utf-8", errors="replace") as f:
+            lines = [f.readline() for _ in range(max_lines)]
+            content = "".join(lines)
+        return {"status": "success", "filepath": p, "content": content}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def write_file(filepath: str, content: str, mode: str = "w") -> Dict[str, Any]:
+    """Creates or writes text content to a file on the user's computer."""
+    p = os.path.expanduser(filepath.strip())
+    parent_dir = os.path.dirname(p)
+    if parent_dir and not os.path.exists(parent_dir):
+        os.makedirs(parent_dir, exist_ok=True)
+    try:
+        write_mode = "a" if "append" in mode.lower() else "w"
+        with open(p, write_mode, encoding="utf-8") as f:
+            f.write(content)
+        action_word = "appended to" if write_mode == "a" else "written to"
+        return {"status": "success", "filepath": p, "message": f"Successfully {action_word} {p}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def applescript_exec(script: str) -> Dict[str, Any]:
+    """Executes native AppleScript code to automate macOS apps (Safari, Finder, Notes, System Settings, etc.)."""
+    clean_script = script.strip()
+    try:
+        res = subprocess.run(["osascript", "-e", clean_script], capture_output=True, text=True, timeout=15.0)
+        if res.returncode == 0:
+            return {"status": "success", "result": res.stdout.strip()}
+        return {"status": "error", "message": res.stderr.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def switch_tab(
+    tab_index: Optional[int] = None,
+    tab_name: Optional[str] = None,
+    action: Optional[str] = "switch",
+    browser: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Switches between tabs, selects a tab by number or title, or manages tabs in browsers and tabbed apps on macOS.
+    Supports Google Chrome, Safari, Brave, Arc, and general tabbed apps.
+    """
+    act = (action or "switch").strip().lower()
+    clean_target = (tab_name or "").strip().lower()
+
+    # 1. Determine target browser / app
+    target_browser = None
+    if browser:
+        b_low = browser.strip().lower()
+        if "chrome" in b_low:
+            target_browser = "Google Chrome"
+        elif "safari" in b_low:
+            target_browser = "Safari"
+        elif "brave" in b_low:
+            target_browser = "Brave Browser"
+        elif "arc" in b_low:
+            target_browser = "Arc"
+        else:
+            target_browser = browser.strip()
+
+    if not target_browser:
+        detect_script = '''
+        tell application "System Events"
+            set frontApp to name of first application process whose frontmost is true
+            set allApps to name of every application process
+        end tell
+        return frontApp & "|" & (allApps contains "Google Chrome") & "|" & (allApps contains "Safari") & "|" & (allApps contains "Arc") & "|" & (allApps contains "Brave Browser")
+        '''
+        try:
+            res = subprocess.run(["osascript", "-e", detect_script], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                parts = res.stdout.strip().split("|")
+                front_app = parts[0].strip()
+                has_chrome = len(parts) > 1 and parts[1].strip().lower() == "true"
+                has_safari = len(parts) > 2 and parts[2].strip().lower() == "true"
+                has_arc = len(parts) > 3 and parts[3].strip().lower() == "true"
+                has_brave = len(parts) > 4 and parts[4].strip().lower() == "true"
+
+                if front_app in ["Google Chrome", "Safari", "Arc", "Brave Browser"]:
+                    target_browser = front_app
+                elif has_chrome:
+                    target_browser = "Google Chrome"
+                elif has_safari:
+                    target_browser = "Safari"
+                elif has_arc:
+                    target_browser = "Arc"
+                elif has_brave:
+                    target_browser = "Brave Browser"
+                else:
+                    target_browser = front_app
+        except Exception:
+            target_browser = "Google Chrome"
+
+    target_browser = target_browser or "Google Chrome"
+
+    # 2. Google Chrome or Brave Browser
+    if target_browser in ["Google Chrome", "Brave Browser"]:
+        ascript = f'''
+        tell application "{target_browser}"
+            activate
+            if (count of windows) = 0 then
+                return "error:No windows open in {target_browser}"
+            end if
+            set win to window 1
+            set totalTabs to count of tabs of win
+
+            if "{act}" is "list" then
+                set res to ""
+                repeat with i from 1 to totalTabs
+                    set res to res & (i as string) & ": " & (title of tab i of win) & linefeed
+                end repeat
+                return "list:" & res
+            else if "{act}" is "new" then
+                tell win to make new tab
+                return "success:Opened new tab"
+            else if "{act}" is "close" then
+                close active tab of win
+                return "success:Closed tab"
+            else if "{act}" is "next" then
+                set cur to active tab index of win
+                if cur < totalTabs then
+                    set active tab index of win to (cur + 1)
+                else
+                    set active tab index of win to 1
+                end if
+                return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
+            else if "{act}" is "previous" or "{act}" is "prev" then
+                set cur to active tab index of win
+                if cur > 1 then
+                    set active tab index of win to (cur - 1)
+                else
+                    set active tab index of win to totalTabs
+                end if
+                return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
+            end if
+
+            -- Search by name/title
+            if "{clean_target}" is not "" then
+                repeat with i from 1 to totalTabs
+                    set tTitle to (title of tab i of win) as string
+                    set tUrl to (URL of tab i of win) as string
+                    ignoring case
+                        if (tTitle contains "{clean_target}") or (tUrl contains "{clean_target}") then
+                            set active tab index of win to i
+                            return "success:Switched to tab " & (i as string) & " (" & tTitle & ")"
+                        end if
+                    end ignoring
+                end repeat
+            end if
+
+            -- Switch by 1-indexed tab index
+            set targetIdx to {int(tab_index) if tab_index is not None else 0}
+            if targetIdx > 0 then
+                if targetIdx > totalTabs then
+                    set targetIdx to totalTabs
+                end if
+                set active tab index of win to targetIdx
+                return "success:Switched to tab " & (targetIdx as string) & " (" & (title of active tab of win) & ")"
+            end if
+
+            return "error:Please specify a tab number (e.g. 1, 2, 3) or tab name."
+        end tell
+        '''
+        try:
+            res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=5.0)
+            out = res.stdout.strip()
+            if out.startswith("success:"):
+                return {"status": "success", "message": out[8:].strip(), "browser": target_browser}
+            elif out.startswith("list:"):
+                tabs = [line.strip() for line in out[5:].splitlines() if line.strip()]
+                return {"status": "success", "tabs": tabs, "browser": target_browser, "message": f"Found {len(tabs)} tabs in {target_browser}"}
+            elif out.startswith("error:"):
+                return {"status": "error", "message": out[6:].strip(), "browser": target_browser}
+            return {"status": "success", "message": f"Switched tab in {target_browser}", "browser": target_browser}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # 3. Safari
+    elif target_browser == "Safari":
+        ascript = f'''
+        tell application "Safari"
+            activate
+            if (count of windows) = 0 then
+                return "error:No windows open in Safari"
+            end if
+            set win to window 1
+            set totalTabs to count of tabs of win
+
+            if "{act}" is "list" then
+                set res to ""
+                repeat with i from 1 to totalTabs
+                    set res to res & (i as string) & ": " & (name of tab i of win) & linefeed
+                end repeat
+                return "list:" & res
+            else if "{act}" is "new" then
+                tell win to make new tab
+                return "success:Opened new tab"
+            else if "{act}" is "close" then
+                close current tab of win
+                return "success:Closed tab"
+            else if "{act}" is "next" then
+                set cur to index of current tab of win
+                if cur < totalTabs then
+                    set current tab of win to tab (cur + 1) of win
+                else
+                    set current tab of win to tab 1 of win
+                end if
+                return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
+            else if "{act}" is "previous" or "{act}" is "prev" then
+                set cur to index of current tab of win
+                if cur > 1 then
+                    set current tab of win to tab (cur - 1) of win
+                else
+                    set current tab of win to tab totalTabs of win
+                end if
+                return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
+            end if
+
+            -- Search by name
+            if "{clean_target}" is not "" then
+                repeat with i from 1 to totalTabs
+                    set tName to (name of tab i of win) as string
+                    set tUrl to (URL of tab i of win) as string
+                    ignoring case
+                        if (tName contains "{clean_target}") or (tUrl contains "{clean_target}") then
+                            set current tab of win to tab i of win
+                            return "success:Switched to tab " & (i as string) & " (" & tName & ")"
+                        end if
+                    end ignoring
+                end repeat
+            end if
+
+            -- Switch by index
+            set targetIdx to {int(tab_index) if tab_index is not None else 0}
+            if targetIdx > 0 then
+                if targetIdx > totalTabs then
+                    set targetIdx to totalTabs
+                end if
+                set current tab of win to tab targetIdx of win
+                return "success:Switched to tab " & (targetIdx as string) & " (" & (name of current tab of win) & ")"
+            end if
+
+            return "error:Please specify a tab number (e.g. 1, 2, 3) or tab name."
+        end tell
+        '''
+        try:
+            res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=5.0)
+            out = res.stdout.strip()
+            if out.startswith("success:"):
+                return {"status": "success", "message": out[8:].strip(), "browser": "Safari"}
+            elif out.startswith("list:"):
+                tabs = [line.strip() for line in out[5:].splitlines() if line.strip()]
+                return {"status": "success", "tabs": tabs, "browser": "Safari", "message": f"Found {len(tabs)} tabs in Safari"}
+            elif out.startswith("error:"):
+                return {"status": "error", "message": out[6:].strip(), "browser": "Safari"}
+            return {"status": "success", "message": "Switched tab in Safari", "browser": "Safari"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    # 4. Fallback for other apps (Cmd + 1..9, or Ctrl+Tab)
+    else:
+        try:
+            if tab_index and 1 <= tab_index <= 9:
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.1
+                tell application "System Events"
+                    keystroke "{tab_index}" using command down
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Switched to tab {tab_index} in {target_browser}", "browser": target_browser}
+            elif act == "next":
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.1
+                tell application "System Events"
+                    key code 48 using control down
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Switched to next tab in {target_browser}", "browser": target_browser}
+            elif act in ["previous", "prev"]:
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.1
+                tell application "System Events"
+                    key code 48 using {{control down, shift down}}
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Switched to previous tab in {target_browser}", "browser": target_browser}
+            elif act == "new":
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.1
+                tell application "System Events"
+                    keystroke "t" using command down
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Opened new tab in {target_browser}", "browser": target_browser}
+            elif act == "close":
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.1
+                tell application "System Events"
+                    keystroke "w" using command down
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Closed tab in {target_browser}", "browser": target_browser}
+            return {"status": "error", "message": f"Unsupported action '{act}' for {target_browser}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
 def switch_mode(target_mode: str) -> Dict[str, Any]:
     """Switches the assistant between 'command' mode and 'chat' mode."""
     mode_lower = target_mode.strip().lower()
@@ -1242,9 +1713,35 @@ TOOL_HANDLERS = {
     "create_reminder": create_reminder,
     "clipboard_action": clipboard_action,
     "take_screenshot": take_screenshot,
+    "analyze_screen": analyze_screen,
+    "see_screen": analyze_screen,
+    "inspect_screen": analyze_screen,
+    "check_screen": analyze_screen,
+    "look_at_screen": analyze_screen,
+    "execute_shell": execute_shell,
+    "run_terminal_command": execute_shell,
+    "run_bash": execute_shell,
+    "read_file": read_file,
+    "write_file": write_file,
+    "create_file": write_file,
+    "applescript_exec": applescript_exec,
+    "run_applescript": applescript_exec,
+    "switch_tab": switch_tab,
+    "switch_browser_tab": switch_tab,
+    "change_tab": switch_tab,
+    "select_tab": switch_tab,
+    "tab_control": switch_tab,
     "switch_mode": switch_mode,
     "system_control": system_control,
-    "get_current_time": get_current_time
+    "get_current_time": get_current_time,
+    "dismiss_assistant": dismiss_assistant,
+    "dismiss": dismiss_assistant,
+    "hide_assistant": dismiss_assistant,
+    "disappear": dismiss_assistant,
+    "close_assistant": dismiss_assistant,
+    "remember_user_fact": remember_user_fact,
+    "remember_fact": remember_user_fact,
+    "get_user_memory": get_user_memory
 }
 
 async def execute_tool_call(name: str, args: dict) -> dict:
@@ -1253,7 +1750,13 @@ async def execute_tool_call(name: str, args: dict) -> dict:
     if not handler:
         return {"status": "error", "message": f"Unknown tool '{name}'"}
     try:
-        result = handler(**args)
+        import inspect
+        if inspect.iscoroutinefunction(handler):
+            result = await handler(**args)
+        else:
+            result = await asyncio.to_thread(handler, **args)
+        if not isinstance(result, dict):
+            result = {"status": "success", "result": str(result) if result is not None else "OK"}
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1540,6 +2043,169 @@ def get_jarvis_tools() -> list[types.Tool]:
                     )
                 },
                 required=["action"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="analyze_screen",
+            description=(
+                "Captures and analyzes the user's screen in real-time using multimodal AI vision. "
+                "Use this tool whenever the user says 'look at my screen', 'what is on my screen', 'can you see this', "
+                "'analyze my screen', 'analyse my screen', 'scan my screen', 'see my screen', 'analyze this error', 'ekranga qara', 'ekranda nima bor', or asks questions about visible windows, text, code, or UI elements."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "query": types.Schema(
+                        type="STRING",
+                        description="Specific question, focus, or instructions about what to analyze on screen (e.g. 'What is the error on the screen?', 'Summarize this article', 'What app is open?')."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="execute_shell",
+            description=(
+                "Executes a shell command (zsh/bash) directly on macOS. "
+                "Use this to inspect files, check system status, run developer tools (git, python, curl, brew, npm), automate tasks, or execute multi-step plans."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "command": types.Schema(
+                        type="STRING",
+                        description="The exact shell command line to run, e.g. 'git status', 'ls -la ~/Projects', 'python3 script.py', 'curl ifconfig.me'."
+                    )
+                },
+                required=["command"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="read_file",
+            description="Reads the text content of a file or lists files in a directory on the user's computer.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "filepath": types.Schema(
+                        type="STRING",
+                        description="The path to the file or directory to read, e.g. '~/Desktop/notes.txt', '~/Projects/app.py'."
+                    ),
+                    "max_lines": types.Schema(
+                        type="INTEGER",
+                        description="Maximum number of lines to read (default: 150)."
+                    )
+                },
+                required=["filepath"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="write_file",
+            description="Creates, overwrites, or appends text to a file on the user's computer.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "filepath": types.Schema(
+                        type="STRING",
+                        description="The path where the file should be saved or edited, e.g. '~/Desktop/todo.txt'."
+                    ),
+                    "content": types.Schema(
+                        type="STRING",
+                        description="The full text content to write into the file."
+                    ),
+                    "mode": types.Schema(
+                        type="STRING",
+                        description="'w' to create/overwrite, 'a' to append."
+                    )
+                },
+                required=["filepath", "content"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="applescript_exec",
+            description="Executes AppleScript on macOS to automate UI interactions, Safari tabs, Finder windows, or System Settings.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "script": types.Schema(
+                        type="STRING",
+                        description="The AppleScript code snippet to run."
+                    )
+                },
+                required=["script"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="switch_tab",
+            description=(
+                "Switches or selects tabs in web browsers (Google Chrome, Safari, Brave, Arc) or tabbed applications on macOS. "
+                "Use this tool whenever the user asks to switch or select tabs (e.g. 'switch to the 1st tab', 'switch to 3rd tab', "
+                "'1-tabga o't', '3-tabga o't', 'keyingi tabga o't', 'switch to YouTube tab', 'next tab', 'close this tab', 'list open tabs')."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "tab_index": types.Schema(
+                        type="INTEGER",
+                        description="The 1-based index of the tab to switch to (e.g. 1 for first tab, 2 for second, 3 for third tab, etc.)."
+                    ),
+                    "tab_name": types.Schema(
+                        type="STRING",
+                        description="Optional keyword or title to search and select among open tabs (e.g. 'YouTube', 'Google', 'IELTS', 'Docs')."
+                    ),
+                    "action": types.Schema(
+                        type="STRING",
+                        description="Optional action: 'switch' (default), 'next', 'previous', 'new', 'close', or 'list'."
+                    ),
+                    "browser": types.Schema(
+                        type="STRING",
+                        description="Optional specific browser name: 'Google Chrome', 'Safari', 'Arc', 'Brave Browser'."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="dismiss_assistant",
+            description=(
+                "Immediately hides and dismisses the assistant from the screen. "
+                "Call this tool whenever the user tells the assistant to disappear, go away, hide, close, dismiss, "
+                "or says 'yo'qol', 'yashirin', 'ket', 'xayr', 'dam ol', 'yo'q bo'l', 'ekrandan ket'."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "reason": types.Schema(
+                        type="STRING",
+                        description="Optional reason for dismissing (e.g. 'user requested dismissal')."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="remember_user_fact",
+            description=(
+                "Stores a permanent fact, preference, or rule about the owner (Ahmet) into Swan's long-term memory. "
+                "Call this whenever the user says 'eslab qol', 'yodingda saqla', 'remember that', or gives a personal preference/detail."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "fact": types.Schema(
+                        type="STRING",
+                        description="The fact or preference to remember about the user."
+                    ),
+                    "category": types.Schema(
+                        type="STRING",
+                        description="Optional category: 'preference', 'identity', 'work', 'music', 'general'."
+                    )
+                },
+                required=["fact"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="get_user_memory",
+            description="Retrieves the owner's profile, saved preferences, and long-term memory facts.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={}
             )
         )
     ]

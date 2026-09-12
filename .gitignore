@@ -1,18 +1,39 @@
 # Environments & secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# User Memory & Private State
+swan_memory.json
+
+# Python virtualenvs & cache
 .venv/
 env/
 venv/
-
-# Python cache
+ENV/
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.pytest_cache/
+
+# OS and IDE metadata
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.vscode/
+.idea/
 
 # Logs & temp files
 *.log
 /tmp/
-.DS_Store
+*.tmp
+*.lock
 test.aiff
 test.wav
+cand_*.wav
+test_*.wav

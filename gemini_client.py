@@ -19,6 +19,7 @@ class GeminiLiveClient:
         self._lock = asyncio.Lock()
         self.active_mode = initial_mode
         self._last_activity_time = 0.0
+        self._needs_reconnect = False
         self.on_tool_executed: Optional[Callable[[str, Dict[str, Any], Dict[str, Any]], None]] = None
 
     def _create_config(self) -> types.LiveConnectConfig:
@@ -67,13 +68,17 @@ class GeminiLiveClient:
     async def ensure_active_session(self):
         """Proactively checks and warms the Gemini Live session so it never stumbles or stalls."""
         async with self._lock:
-            if not self.is_healthy():
-                print("🔄 [Gemini Live] Session not connected or closed; connecting now...", flush=True)
+            if not self.is_healthy() or getattr(self, "_needs_reconnect", False):
+                print("🔄 [Gemini Live] Refreshing session with updated configuration...", flush=True)
+                self._needs_reconnect = False
                 await self._disconnect_unlocked()
                 try:
                     await self._connect_unlocked()
                 except Exception as e:
                     print(f"❌ [WARN] Connect failed: {e}", flush=True)
+                    self._connected = False
+                    self.session = None
+                    self._needs_reconnect = True
                 return
 
     async def _connect_unlocked(self):
@@ -84,12 +89,14 @@ class GeminiLiveClient:
         )
         self.session = await self._session_context.__aenter__()
         self._connected = True
+        self._needs_reconnect = False
         self._last_activity_time = time.time()
 
     async def connect(self):
         async with self._lock:
-            if self.is_healthy():
+            if self.is_healthy() and not getattr(self, "_needs_reconnect", False):
                 return
+            self._needs_reconnect = False
             await self._disconnect_unlocked()
             try:
                 await self._connect_unlocked()
@@ -115,28 +122,27 @@ class GeminiLiveClient:
     def set_mode(self, new_mode: str):
         if self.active_mode != new_mode:
             self.active_mode = new_mode
-            self._connected = False
+            self._needs_reconnect = True
 
     def set_language(self, new_lang: str):
-        config.language = new_lang
-        self._connected = False
+        if config.language != new_lang:
+            config.language = new_lang
+            self._needs_reconnect = True
 
     def set_voice(self, new_voice: str):
-        if new_voice in ["Aoede", "Charon", "Kore", "Fenrir", "Puck"]:
+        if new_voice in ["Aoede", "Charon"]:
             config.voice_name = new_voice
             config.save_persisted_settings()
-            self._connected = False
+            self._needs_reconnect = True
 
     def set_accent(self, new_accent: str):
-        if new_accent in ["british", "american", "neutral"]:
-            config.accent = new_accent
-            config.save_persisted_settings()
-            self._connected = False
+        # Deprecated: Accent feature removed in favor of natural native pronunciation
+        pass
 
     def set_respectful(self, enabled: bool):
         config.respectful_address = bool(enabled)
         config.save_persisted_settings()
-        self._connected = False
+        self._needs_reconnect = True
 
     async def _execute_turn(
         self,
@@ -148,6 +154,8 @@ class GeminiLiveClient:
     ) -> float:
         # Ensure session is healthy and warmed before sending
         await self.ensure_active_session()
+        if not self.is_healthy() or self.session is None:
+            await self.connect()
 
         send_time = time.time()
         first_audio_time = None
@@ -180,9 +188,12 @@ class GeminiLiveClient:
                         )
 
                     # Send tool results back to Gemini Live
-                    if function_responses and self.is_healthy():
-                        await self.session.send_tool_response(function_responses=function_responses)
-                        self._last_activity_time = time.time()
+                    if function_responses and self.session is not None:
+                        try:
+                            await self.session.send_tool_response(function_responses=function_responses)
+                            self._last_activity_time = time.time()
+                        except Exception as te:
+                            print(f"❌ [Gemini Live] Failed to send tool response: {te}", flush=True)
 
                 # 2. Handle Server Content (Audio + Transcription)
                 if resp.server_content:
@@ -205,13 +216,21 @@ class GeminiLiveClient:
             await self.session.send_client_content(turns=content, turn_complete=True)
             self._last_activity_time = time.time()
 
-            # Prevent hanging: max 22.0s wait for Gemini's response and tool execution
-            await asyncio.wait_for(_receive_loop(), timeout=22.0)
+            # Prevent hanging: max 50.0s wait for Gemini's response and tool execution
+            await asyncio.wait_for(_receive_loop(), timeout=50.0)
+
+        except asyncio.CancelledError:
+            print("🛑 [Gemini Client] Turn cancelled by caller. Disconnecting session cleanly for next call...", flush=True)
+            self._needs_reconnect = True
+            self._connected = False
+            await self._disconnect_unlocked()
+            raise
 
         except (asyncio.TimeoutError, Exception) as e:
             print(f"⚠️ [Gemini Live] Turn error/timeout ({type(e).__name__}): {e}. Retrying with fresh session...", flush=True)
             self._connected = False
-            await self.disconnect()
+            self._needs_reconnect = True
+            await self._disconnect_unlocked()
             if retry_count == 0:
                 await self.connect()
                 return await self._execute_turn(
@@ -224,6 +243,22 @@ class GeminiLiveClient:
             raise e
 
         latency = (first_audio_time - send_time) if first_audio_time else (time.time() - send_time)
+
+        # Automatic Recovery: If session returned empty response (0 audio chunks), retry once with clean session!
+        if first_audio_time is None and retry_count == 0:
+            print("⚠️ [Gemini Live] Session yielded 0 audio chunks. Auto-reconnecting and retrying turn...", flush=True)
+            self._connected = False
+            self._needs_reconnect = True
+            await self._disconnect_unlocked()
+            await self.connect()
+            return await self._execute_turn(
+                content=content,
+                on_audio_chunk=on_audio_chunk,
+                on_transcript_chunk=on_transcript_chunk,
+                on_tool_call=on_tool_call,
+                retry_count=1
+            )
+
         return latency
 
     async def send_audio_turn(

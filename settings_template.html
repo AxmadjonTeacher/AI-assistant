@@ -6,22 +6,22 @@
 <title>Swan Settings & Customization</title>
 <style>
   :root {
-    --bg-window: rgba(26, 28, 34, 0.96);
-    --bg-sidebar: rgba(20, 22, 27, 0.7);
-    --bg-card: rgba(255, 255, 255, 0.05);
-    --bg-card-hover: rgba(255, 255, 255, 0.08);
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-card: rgba(255, 255, 255, 0.1);
-    --accent: #0A84FF;
-    --accent-glow: rgba(10, 132, 255, 0.3);
-    --accent-cyan: #00D2FF;
+    --bg-window: rgba(14, 15, 22, 0.96);
+    --bg-sidebar: rgba(10, 11, 16, 0.76);
+    --bg-card: rgba(255, 255, 255, 0.04);
+    --bg-card-hover: rgba(255, 255, 255, 0.065);
+    --border-subtle: rgba(230, 225, 255, 0.08);
+    --border-card: rgba(230, 225, 255, 0.12);
+    --accent: #9452F5;
+    --accent-lavender: #E6E1FF;
+    --accent-glow: rgba(148, 82, 245, 0.35);
     --text-primary: #FFFFFF;
-    --text-secondary: rgba(255, 255, 255, 0.65);
-    --text-muted: rgba(255, 255, 255, 0.4);
-    --control-bg: rgba(0, 0, 0, 0.3);
-    --control-active: rgba(255, 255, 255, 0.18);
-    --kbd-bg: rgba(255, 255, 255, 0.1);
-    --kbd-border: rgba(255, 255, 255, 0.2);
+    --text-secondary: rgba(230, 225, 255, 0.72);
+    --text-muted: rgba(230, 225, 255, 0.45);
+    --control-bg: rgba(0, 0, 0, 0.40);
+    --control-active: linear-gradient(135deg, rgba(148, 82, 245, 0.65), rgba(110, 58, 210, 0.50));
+    --kbd-bg: rgba(255, 255, 255, 0.08);
+    --kbd-border: rgba(230, 225, 255, 0.18);
   }
 
   * {
@@ -44,44 +44,60 @@
 
   /* SIDEBAR */
   .sidebar {
-    width: 216px;
+    width: 220px;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
-    padding: 14px 10px 14px 10px;
+    padding: 16px 12px 14px 12px;
     -webkit-app-region: drag;
   }
 
   .sidebar-header {
     height: 38px;
-    padding-left: 70px; /* Leave space for macOS traffic lights */
+    padding-left: 68px; /* Space for macOS traffic lights */
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 9px;
+    margin-bottom: 18px;
   }
 
   .brand-logo {
-    width: 20px;
-    height: 20px;
+    width: 26px;
+    height: 27px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
-  .brand-logo svg {
-    width: 100%;
-    height: 100%;
-    transform: scaleX(-1);
-    filter: drop-shadow(0 0 6px rgba(0, 210, 255, 0.6));
+  .brand-swan-img {
+    width: 25px;
+    height: 26px;
+    object-fit: contain;
+    /* Clean crystal swan: NO circle and NO glow */
+  }
+
+  .brand-text-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
 
   .brand-title {
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 700;
     letter-spacing: -0.2px;
-    color: #fff;
+    color: #FFFFFF;
+    text-shadow: 0 0 10px rgba(148, 82, 245, 0.6);
+  }
+
+  .brand-badge {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    color: rgba(230, 225, 255, 0.65);
   }
 
   .nav-group {
@@ -96,39 +112,43 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 7px 10px;
-    border-radius: 8px;
+    padding: 7.5px 11px;
+    border-radius: 9px;
     font-size: 12.5px;
-    font-weight: 450;
+    font-weight: 500;
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid transparent;
   }
 
   .nav-item:hover {
-    background: rgba(255, 255, 255, 0.06);
-    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+    color: #FFFFFF;
   }
 
   .nav-item.active {
-    background: var(--accent);
-    color: #fff;
-    font-weight: 500;
+    background: linear-gradient(135deg, rgba(148, 82, 245, 0.30), rgba(110, 58, 210, 0.16));
+    border: 1px solid rgba(230, 225, 255, 0.22);
+    box-shadow: 0 2px 10px rgba(148, 82, 245, 0.22);
+    color: #FFFFFF;
+    font-weight: 600;
   }
 
   .nav-icon {
-    width: 20px;
-    height: 20px;
-    border-radius: 5px;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
-    background: rgba(255, 255, 255, 0.12);
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    transition: background 0.15s ease;
   }
 
   .nav-item.active .nav-icon {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(148, 82, 245, 0.35);
   }
 
   .sidebar-footer {
@@ -143,20 +163,21 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 6px 12px;
+    padding: 7px 12px;
     font-size: 11.5px;
-    font-weight: 500;
-    color: #ff6b6b;
-    background: rgba(255, 59, 48, 0.1);
-    border: 1px solid rgba(255, 59, 48, 0.2);
-    border-radius: 7px;
+    font-weight: 550;
+    color: #FF7B7B;
+    background: rgba(255, 59, 48, 0.08);
+    border: 1px solid rgba(255, 59, 48, 0.22);
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.2s ease;
   }
 
   .btn-quit:hover {
-    background: rgba(255, 59, 48, 0.22);
-    border-color: rgba(255, 59, 48, 0.4);
+    background: rgba(255, 59, 48, 0.20);
+    border-color: rgba(255, 59, 48, 0.40);
+    box-shadow: 0 0 10px rgba(255, 59, 48, 0.25);
   }
 
   /* MAIN CONTENT AREA */
@@ -168,43 +189,47 @@
   }
 
   .window-topbar {
-    height: 48px;
+    height: 50px;
     border-bottom: 1px solid var(--border-subtle);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 20px;
+    padding: 0 22px;
     -webkit-app-region: drag;
-    background: rgba(26, 28, 34, 0.4);
+    background: rgba(14, 15, 22, 0.50);
   }
 
   .window-title {
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 600;
+    letter-spacing: -0.15px;
     color: var(--text-primary);
   }
 
   .btn-done {
     -webkit-app-region: no-drag;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid var(--border-card);
-    color: #fff;
-    font-size: 11.5px;
-    font-weight: 500;
-    padding: 4px 12px;
-    border-radius: 6px;
+    background: rgba(148, 82, 245, 0.22);
+    border: 1px solid rgba(230, 225, 255, 0.30);
+    color: #E6E1FF;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4.5px 14px;
+    border-radius: 999px;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.18s ease;
+    box-shadow: 0 1px 6px rgba(148, 82, 245, 0.2);
   }
 
   .btn-done:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(148, 82, 245, 0.38);
+    border-color: rgba(230, 225, 255, 0.45);
+    box-shadow: 0 0 12px rgba(148, 82, 245, 0.45);
   }
 
   .content-scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 20px 24px 30px 24px;
+    padding: 22px 26px 32px 26px;
     -webkit-app-region: no-drag;
   }
 
@@ -212,7 +237,7 @@
     width: 6px;
   }
   .content-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(230, 225, 255, 0.18);
     border-radius: 3px;
   }
 
@@ -237,23 +262,24 @@
   }
 
   .section-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(230, 225, 255, 0.65);
     text-transform: uppercase;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.65px;
   }
 
   .inset-card {
     background: var(--bg-card);
     border: 1px solid var(--border-card);
-    border-radius: 11px;
+    border-radius: 13px;
     overflow: hidden;
     margin-bottom: 20px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(230, 225, 255, 0.10);
   }
 
   .card-row {
-    padding: 12px 16px;
+    padding: 13px 18px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -268,61 +294,62 @@
   .row-meta {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 2.5px;
   }
 
   .row-title {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 550;
     color: var(--text-primary);
   }
 
   .row-desc {
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--text-secondary);
-    line-height: 1.35;
+    line-height: 1.4;
   }
 
   /* APPLE SEGMENTED CONTROL */
   .segmented-control {
     display: flex;
     background: var(--control-bg);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-    padding: 2px;
+    border: 1px solid rgba(230, 225, 255, 0.14);
+    border-radius: 9px;
+    padding: 2.5px;
     gap: 2px;
   }
 
   .segment-btn {
-    padding: 4px 10px;
+    padding: 4.5px 11px;
     font-size: 11.5px;
     font-weight: 500;
     color: var(--text-secondary);
     background: transparent;
-    border: none;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 7px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.16s ease;
     white-space: nowrap;
   }
 
   .segment-btn:hover {
-    color: #fff;
+    color: #FFFFFF;
   }
 
   .segment-btn.active {
     background: var(--control-active);
-    color: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    color: #FFFFFF;
+    border-color: rgba(230, 225, 255, 0.28);
+    box-shadow: 0 2px 8px rgba(148, 82, 245, 0.35);
     font-weight: 600;
   }
 
-  /* APPLE TOGGLE SWITCH */
+  /* APPLE PURPLE TOGGLE SWITCH */
   .switch-container {
     position: relative;
     display: inline-block;
-    width: 42px;
-    height: 24px;
+    width: 44px;
+    height: 25px;
     cursor: pointer;
   }
 
@@ -335,39 +362,40 @@
   .switch-slider {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background-color: rgba(255, 255, 255, 0.16);
+    background-color: rgba(255, 255, 255, 0.14);
     transition: .22s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
   }
 
   .switch-slider:before {
     position: absolute;
     content: "";
-    height: 18px;
-    width: 18px;
+    height: 19px;
+    width: 19px;
     left: 2px;
     bottom: 2px;
-    background-color: white;
+    background-color: #FFFFFF;
     transition: .22s cubic-bezier(0.4, 0, 0.2, 1);
     border-radius: 50%;
     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
   }
 
   .switch-input:checked + .switch-slider {
-    background-color: #34C759;
-    border-color: #34C759;
+    background: linear-gradient(135deg, #9452F5, #7A35DF);
+    border-color: rgba(230, 225, 255, 0.40);
+    box-shadow: 0 0 12px rgba(148, 82, 245, 0.55);
   }
 
   .switch-input:checked + .switch-slider:before {
-    transform: translateX(18px);
+    transform: translateX(19px);
   }
 
   /* STATUS BADGE */
   .badge {
     font-size: 11px;
-    font-weight: 500;
-    padding: 3px 8px;
+    font-weight: 550;
+    padding: 3.5px 9px;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-secondary);
@@ -375,81 +403,105 @@
   }
 
   .badge.active {
-    background: rgba(52, 199, 89, 0.15);
-    color: #34C759;
-    border-color: rgba(52, 199, 89, 0.3);
+    background: rgba(148, 82, 245, 0.20);
+    color: #E6E1FF;
+    border-color: rgba(230, 225, 255, 0.35);
+    box-shadow: 0 0 8px rgba(148, 82, 245, 0.3);
   }
 
   /* KEYBOARD KEYS */
   .kbd-group {
     display: flex;
-    gap: 4px;
+    gap: 5px;
   }
 
   kbd {
     background: var(--kbd-bg);
     border: 1px solid var(--kbd-border);
     border-bottom: 2px solid var(--kbd-border);
-    border-radius: 5px;
-    padding: 2px 7px;
-    font-size: 11px;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11.5px;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", monospace;
-    color: #fff;
-    font-weight: 500;
+    color: #FFFFFF;
+    font-weight: 550;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
   }
 
   /* COMMAND CHIPS */
   .chip-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    gap: 9px;
     margin-top: 6px;
   }
 
   .cmd-chip {
     background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    padding: 8px 11px;
+    border: 1px solid rgba(230, 225, 255, 0.09);
+    border-radius: 9px;
+    padding: 9px 12px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 2.5px;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .cmd-chip:hover {
-    background: rgba(255, 255, 255, 0.09);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(148, 82, 245, 0.12);
+    border-color: rgba(230, 225, 255, 0.25);
     transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(148, 82, 245, 0.18);
   }
 
   .cmd-voice {
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 600;
-    color: var(--accent-cyan);
+    color: #E6E1FF;
     display: flex;
     align-items: center;
     gap: 5px;
   }
 
   .cmd-action {
-    font-size: 10.5px;
+    font-size: 11px;
     color: var(--text-muted);
   }
 
   .notice-banner {
-    padding: 10px 14px;
-    border-radius: 8px;
-    background: rgba(10, 132, 255, 0.08);
-    border: 1px solid rgba(10, 132, 255, 0.2);
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.4;
-    margin-top: 10px;
+    padding: 11px 15px;
+    border-radius: 9px;
+    background: rgba(148, 82, 245, 0.12);
+    border: 1px solid rgba(230, 225, 255, 0.22);
+    font-size: 11.5px;
+    color: rgba(230, 225, 255, 0.90);
+    line-height: 1.45;
+    margin-top: 12px;
     display: flex;
-    gap: 8px;
+    gap: 9px;
     align-items: center;
+  }
+
+  /* MEMORY PREVIEW TAGS */
+  .memory-tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 8px;
+  }
+
+  .memory-tag {
+    background: rgba(148, 82, 245, 0.15);
+    border: 1px solid rgba(230, 225, 255, 0.20);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #E6E1FF;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
   }
 </style>
 </head>
@@ -459,17 +511,12 @@
 <div class="sidebar">
   <div class="sidebar-header">
     <div class="brand-logo">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M19.5 7.5C19.5 5.5 18 4 16 4C14.5 4 13.3 5 13 6.3C12.5 5 11.2 4 9.5 4C7.5 4 6 5.5 6 7.5C6 9.5 8 12.5 12 16.5C16 12.5 19.5 9.5 19.5 7.5Z" fill="url(#swanGrad)"/>
-        <defs>
-          <linearGradient id="swanGrad" x1="6" y1="4" x2="19.5" y2="16.5" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#00D2FF"/>
-            <stop offset="1" stop-color="#0072FF"/>
-          </linearGradient>
-        </defs>
-      </svg>
+      <img src="swan_logo_crystal.png" class="brand-swan-img" alt="Swan" />
     </div>
-    <div class="brand-title">Swan OS</div>
+    <div class="brand-text-col">
+      <div class="brand-title">Swan OS</div>
+      <div class="brand-badge">Autonomous AI</div>
+    </div>
   </div>
 
   <div class="nav-group">
@@ -480,6 +527,10 @@
     <div class="nav-item" onclick="switchTab('tabVoice', this)">
       <div class="nav-icon">🎙️</div>
       <span>Voice & Audio</span>
+    </div>
+    <div class="nav-item" onclick="switchTab('tabMemory', this)">
+      <div class="nav-icon">🧠</div>
+      <span>Memory & Context</span>
     </div>
     <div class="nav-item" onclick="switchTab('tabShortcuts', this)">
       <div class="nav-icon">⌨️</div>
@@ -519,20 +570,18 @@
       <div class="inset-card">
         <div class="card-row">
           <div class="row-meta">
-            <div class="row-title">Default Spoken Language</div>
-            <div class="row-desc">Swan greets and answers in this language. Seamlessly adapts if you speak another.</div>
+            <div class="row-title">Spoken Language</div>
+            <div class="row-desc">Swan speaks exclusively in Uzbek (O'zbek tili), understanding commands in any language.</div>
           </div>
           <div class="segmented-control" id="langControl">
-            <button class="segment-btn" id="lang-en" onclick="setLanguage('en')">English</button>
-            <button class="segment-btn active" id="lang-uz" onclick="setLanguage('uz')">O'zbek</button>
-            <button class="segment-btn" id="lang-tr" onclick="setLanguage('tr')">Türkçe</button>
+            <button class="segment-btn active" id="lang-uz" style="cursor: default;">O'zbek tili</button>
           </div>
         </div>
 
         <div class="card-row">
           <div class="row-meta">
             <div class="row-title">Respectful Address (Honorifics)</div>
-            <div class="row-desc">Respectfully address as <span id="addressBadge">Janob</span> / efendim / sir. Disable to respond directly without titles.</div>
+            <div class="row-desc">Respectfully address as <span id="addressBadge">Janob</span>. Disable to respond directly without titles.</div>
           </div>
           <label class="switch-container">
             <input type="checkbox" class="switch-input" id="respectfulToggle" checked onchange="toggleRespectful()">
@@ -548,7 +597,7 @@
         <div class="card-row">
           <div class="row-meta">
             <div class="row-title">Assistant Mode</div>
-            <div class="row-desc">Command mode executes macOS tools rapidly; Chat mode engages in conversation.</div>
+            <div class="row-desc">Command mode executes macOS tools rapidly; Chat mode engages in deep conversation.</div>
           </div>
           <div class="segmented-control" id="modeControl">
             <button class="segment-btn active" id="mode-command" onclick="setMode('command')">Command</button>
@@ -572,21 +621,6 @@
           <div class="segmented-control" id="voiceControl">
             <button class="segment-btn active" id="voice-Aoede" onclick="setVoice('Aoede')">Aoede (Female)</button>
             <button class="segment-btn" id="voice-Charon" onclick="setVoice('Charon')">Charon (Male Butler)</button>
-            <button class="segment-btn" id="voice-Kore" onclick="setVoice('Kore')">Kore (Calm)</button>
-            <button class="segment-btn" id="voice-Fenrir" onclick="setVoice('Fenrir')">Fenrir (Deep)</button>
-            <button class="segment-btn" id="voice-Puck" onclick="setVoice('Puck')">Puck (Upbeat)</button>
-          </div>
-        </div>
-
-        <div class="card-row">
-          <div class="row-meta">
-            <div class="row-title">English Accent Style</div>
-            <div class="row-desc">Choose pronunciation and diction cadence when speaking English.</div>
-          </div>
-          <div class="segmented-control" id="accentControl">
-            <button class="segment-btn active" id="accent-british" onclick="setAccent('british')">🇬🇧 British Butler</button>
-            <button class="segment-btn" id="accent-american" onclick="setAccent('american')">🇺🇸 American</button>
-            <button class="segment-btn" id="accent-neutral" onclick="setAccent('neutral')">🌐 Neutral</button>
           </div>
         </div>
       </div>
@@ -630,7 +664,56 @@
       </div>
     </div>
 
-    <!-- PANEL 3: SHORTCUTS -->
+    <!-- PANEL 3: MEMORY & CONTEXT -->
+    <div id="tabMemory" class="panel">
+      <div class="section-header">
+        <div class="section-title">Long-Term Memory & Adaptation</div>
+      </div>
+      <div class="inset-card">
+        <div class="card-row">
+          <div class="row-meta">
+            <div class="row-title">Personal Memory Engine</div>
+            <div class="row-desc">Allows Swan to remember your preferences, projects, favorite apps, and habits across conversations.</div>
+          </div>
+          <div class="badge active">Active</div>
+        </div>
+        <div class="card-row" style="flex-direction: column; align-items: flex-start;">
+          <div class="row-title">Remembered Context & Preferences</div>
+          <div class="row-desc">Key personal knowledge Swan has absorbed about you:</div>
+          <div class="memory-tag-cloud" id="memoryTagsContainer">
+            <div class="memory-tag">👤 Name: Ahmet (Janob)</div>
+            <div class="memory-tag">🌐 Language: Pure Uzbek (Adabiy)</div>
+            <div class="memory-tag">🎵 Music: Spotify Liked & Lofi</div>
+            <div class="memory-tag">🧭 Browser: Safari / Chrome Tabs</div>
+            <div class="memory-tag">⚡ Style: Snappy & Concise Actions</div>
+            <div class="memory-tag">👁️ Vision: Screen Analysis Enabled</div>
+          </div>
+          <div style="margin-top: 10px; display: flex; justify-content: flex-end; width: 100%;">
+            <button class="segment-btn" style="padding: 5px 12px; font-size: 11px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color: #E6E1FF; cursor: pointer;" onclick="sendAction('clearMemory')">Reset Memory</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-title">Context Storage & Privacy</div>
+      </div>
+      <div class="inset-card">
+        <div class="card-row">
+          <div class="row-meta">
+            <div class="row-title">On-Device Privacy</div>
+            <div class="row-desc">All user memories and profiles are stored 100% locally on your Mac in secure JSON storage.</div>
+          </div>
+          <div class="badge">Local Only</div>
+        </div>
+      </div>
+
+      <div class="notice-banner">
+        <span>💡</span>
+        <span><b>How Memory Works:</b> As you talk to Swan (e.g. "Men dasturchiman", "Musiqani sekinroq qo'y"), Swan notes your preferences in the background and tailors its responses to your style!</span>
+      </div>
+    </div>
+
+    <!-- PANEL 4: SHORTCUTS -->
     <div id="tabShortcuts" class="panel">
       <div class="section-header">
         <div class="section-title">Global Keyboard Controls</div>
@@ -670,27 +753,37 @@
       </div>
     </div>
 
-    <!-- PANEL 4: VOICE COMMANDS GUIDE -->
+    <!-- PANEL 5: VOICE COMMANDS GUIDE -->
     <div id="tabCommands" class="panel">
       <div class="section-header">
-        <div class="section-title">Files & Folders</div>
+        <div class="section-title">Screen Vision & Analysis</div>
       </div>
       <div class="chip-grid">
         <div class="cmd-chip">
-          <div class="cmd-voice">"Open Downloads"</div>
-          <div class="cmd-action">Reveals Downloads folder in Finder</div>
+          <div class="cmd-voice">"Ekranga qara" / "Analyze screen"</div>
+          <div class="cmd-action">Captures screen and analyzes open apps, errors, or code</div>
+        </div>
+        <div class="cmd-chip">
+          <div class="cmd-voice">"Bu xatoni ko'r" / "Look at this error"</div>
+          <div class="cmd-action">Explains compiler or terminal error in clear Uzbek</div>
+        </div>
+      </div>
+
+      <div class="section-header" style="margin-top: 16px;">
+        <div class="section-title">Browser Tabs & Folders</div>
+      </div>
+      <div class="chip-grid">
+        <div class="cmd-chip">
+          <div class="cmd-voice">"1-tabga o't" / "Switch to 3rd tab"</div>
+          <div class="cmd-action">Switches active browser tab in Safari or Chrome</div>
+        </div>
+        <div class="cmd-chip">
+          <div class="cmd-voice">"Open Downloads" / "Open Desktop"</div>
+          <div class="cmd-action">Reveals requested folder in Finder</div>
         </div>
         <div class="cmd-chip">
           <div class="cmd-voice">"Create folder Projects"</div>
-          <div class="cmd-action">Makes new folder on Desktop/specified path</div>
-        </div>
-        <div class="cmd-chip">
-          <div class="cmd-voice">"Move screenshots to Pictures"</div>
-          <div class="cmd-action">Batch moves all screenshot images</div>
-        </div>
-        <div class="cmd-chip">
-          <div class="cmd-voice">"Rename draft to final.pdf"</div>
-          <div class="cmd-action">Fuzzy matches and renames file/folder</div>
+          <div class="cmd-action">Makes new folder on Desktop or chosen location</div>
         </div>
         <div class="cmd-chip">
           <div class="cmd-voice">"Delete folder Temp" / "Move to Trash"</div>
@@ -699,51 +792,29 @@
       </div>
 
       <div class="section-header" style="margin-top: 16px;">
-        <div class="section-title">Apps & System</div>
+        <div class="section-title">Apps, Spotify & System</div>
       </div>
       <div class="chip-grid">
         <div class="cmd-chip">
-          <div class="cmd-voice">"Open Safari" / "YouTube"</div>
+          <div class="cmd-voice">"Open Safari" / "YouTube" / "Telegram"</div>
           <div class="cmd-action">Launches native or downloaded web app</div>
         </div>
         <div class="cmd-chip">
           <div class="cmd-voice">"Close Safari" / "Quit Chrome"</div>
-          <div class="cmd-action">Gracefully closes requested app</div>
+          <div class="cmd-action">Gracefully closes requested app or window</div>
         </div>
-        <div class="cmd-chip">
-          <div class="cmd-voice">"What time is it?"</div>
-          <div class="cmd-action">Reports exact local time (UTC+5)</div>
-        </div>
-        <div class="cmd-chip">
-          <div class="cmd-voice">"Switch to chat mode"</div>
-          <div class="cmd-action">Transitions from Command to Chat companion</div>
-        </div>
-      </div>
-
-      <div class="section-header" style="margin-top: 16px;">
-        <div class="section-title">Spotify & Music</div>
-      </div>
-      <div class="chip-grid">
         <div class="cmd-chip">
           <div class="cmd-voice">"Play music on Spotify"</div>
-          <div class="cmd-action">Resumes playback or starts Liked Songs</div>
+          <div class="cmd-action">Resumes playback or streams favorite songs</div>
         </div>
         <div class="cmd-chip">
-          <div class="cmd-voice">"Play Bohemian Rhapsody" / "The Weeknd"</div>
-          <div class="cmd-action">Searches and plays specific song or artist</div>
-        </div>
-        <div class="cmd-chip">
-          <div class="cmd-voice">"Play lofi beats" / "workout music"</div>
-          <div class="cmd-action">Instantly streams curated mood or genre</div>
-        </div>
-        <div class="cmd-chip">
-          <div class="cmd-voice">"Pause music" / "Next track" / "What song is this?"</div>
-          <div class="cmd-action">Full hands-free playback control</div>
+          <div class="cmd-voice">"Soat necha?" / "What time is it?"</div>
+          <div class="cmd-action">Reports exact local time (UTC+5)</div>
         </div>
       </div>
     </div>
 
-    <!-- PANEL 5: ABOUT -->
+    <!-- PANEL 6: ABOUT -->
     <div id="tabAbout" class="panel">
       <div class="section-header">
         <div class="section-title">Assistant System</div>
@@ -751,7 +822,7 @@
       <div class="inset-card">
         <div class="card-row">
           <div class="row-meta">
-            <div class="row-title">Engine</div>
+            <div class="row-title">Core Engine</div>
             <div class="row-desc">Google Gemini 3.1 Flash Live Bidirectional WebSocket API</div>
           </div>
           <div class="badge active">Connected</div>
@@ -765,8 +836,8 @@
         </div>
         <div class="card-row">
           <div class="row-meta">
-            <div class="row-title">Interface</div>
-            <div class="row-desc">Apple Cocoa NSWindow with Liquid Glass Top HUD Pill</div>
+            <div class="row-title">Visual HUD Interface</div>
+            <div class="row-desc">macOS Liquid Glass Capsule with Apple Intelligence Wave</div>
           </div>
           <div class="badge active">macOS Native</div>
         </div>
@@ -786,6 +857,7 @@
     const titles = {
       'tabGeneral': 'General Settings',
       'tabVoice': 'Voice & Wake Word',
+      'tabMemory': 'Memory & Context',
       'tabShortcuts': 'Keyboard Shortcuts',
       'tabCommands': 'Voice Commands Guide',
       'tabAbout': 'About Swan'
@@ -839,13 +911,6 @@
     sendAction('setVoice/' + voice);
   }
 
-  function setAccent(accent) {
-    document.querySelectorAll('#accentControl .segment-btn').forEach(b => b.classList.remove('active'));
-    const btn = document.getElementById('accent-' + accent);
-    if (btn) btn.classList.add('active');
-    sendAction('setAccent/' + accent);
-  }
-
   function toggleRespectful() {
     sendAction('toggleRespectful');
   }
@@ -855,7 +920,7 @@
   }
 
   // Called from Python
-  function updateSettingsState(mode, wakeEnabled, lang, sens, voice, accent, respectful) {
+  function updateSettingsState(mode, wakeEnabled, lang, sens, voice, respectful, facts) {
     if (mode) {
       document.querySelectorAll('#modeControl .segment-btn').forEach(b => b.classList.remove('active'));
       const mBtn = document.getElementById('mode-' + mode);
@@ -895,15 +960,22 @@
       if (vBtn) vBtn.classList.add('active');
     }
 
-    if (accent) {
-      document.querySelectorAll('#accentControl .segment-btn').forEach(b => b.classList.remove('active'));
-      const aBtn = document.getElementById('accent-' + accent);
-      if (aBtn) aBtn.classList.add('active');
-    }
-
     if (respectful !== undefined) {
       const respToggle = document.getElementById('respectfulToggle');
       if (respToggle) respToggle.checked = !!respectful;
+    }
+
+    if (facts && Array.isArray(facts) && facts.length > 0) {
+      const container = document.getElementById('memoryTagsContainer');
+      if (container) {
+        container.innerHTML = '';
+        facts.forEach(fact => {
+          const tag = document.createElement('div');
+          tag.className = 'memory-tag';
+          tag.textContent = fact;
+          container.appendChild(tag);
+        });
+      }
     }
   }
 

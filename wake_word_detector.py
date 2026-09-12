@@ -29,6 +29,44 @@ GRAMMAR_WORDS = [
     "their", "they", "we", "he", "she", "me", "my", "your", "our", "[unk]"
 ]
 
+INTERRUPTION_KEYWORDS = {"stop", "cancel"}
+DISMISS_KEYWORDS = {
+    "disappear", "vanish"
+}
+
+INTERRUPTION_PHRASES = {
+    "shut up", "hold on", "be quiet", "stop talking",
+    "never mind", "thats enough", "that is enough", "please stop"
+}
+
+DISMISS_PHRASES = {
+    "go away", "get lost", "disappear now", "go off", "turn off",
+    "shut down", "good bye", "goodbye", "dismiss assistant", "close assistant",
+    "hide assistant", "vanish now", "yo'qol", "yashirin", "ekrandan ket", "dam ol", "yo'q bo'l"
+}
+
+INTERRUPTION_GRAMMAR_WORDS = [
+    # Interruption targets
+    "stop", "cancel", "shut", "up", "hold", "on", "talking", "quiet", "enough",
+    "be", "never", "mind", "thats", "that", "please",
+    # Dismissal targets
+    "disappear", "vanish",
+    "go", "away", "get", "lost", "now", "off", "turn", "down", "good", "bye", "goodbye",
+    # Phonetic distractors & conversational common words (so Vosk maps non-command speech to these)
+    "leave", "close", "hide", "exit", "dismiss",
+    "swan", "wait", "one", "sound", "son", "sun", "so", "some", "soon", "someone", "upon", "quitting", "closing",
+    "spawn", "spin", "sworn", "swim", "swam", "strong", "stone", "stand", "step", "command", "telegram",
+    "store", "star", "stay", "still", "state", "start", "fun", "done", "run", "man", "mode", "ready",
+    "won", "can", "fan", "fine", "phone", "sign", "dawn", "down", "drawn", "gone", "orders", "welcome",
+    "lawn", "pawn", "fawn", "born", "warn", "weight", "white", "wide", "wet", "late", "space", "indeed",
+    "eight", "hate", "gate", "date", "rate", "the", "a", "an", "is", "it", "to", "in", "sir", "yes", "no",
+    "and", "that", "this", "you", "what", "there", "here", "video", "youtube", "play", "pause",
+    "like", "subscribe", "channel", "watch", "people", "know", "think", "good", "great", "see", "look",
+    "just", "about", "how", "all", "will", "would", "could", "should", "not", "right", "well",
+    "why", "who", "which", "when", "where", "them", "then", "their", "they", "we", "he", "she", "me",
+    "my", "your", "our", "actually", "hey", "hi", "ok", "okay", "[unk]"
+]
+
 RMS_THRESHOLDS = {
     "low": 240.0,    # Strictly near-field direct user speech
     "medium": 120.0, # Balanced responsive default
@@ -39,11 +77,13 @@ class WakeWordDetector:
     def __init__(
         self,
         on_wake_callback: Callable[[], None],
+        on_interrupt_callback: Optional[Callable[[str], None]] = None,
         model_dir: Optional[str] = None,
         sample_rate: int = 16000,
         sensitivity: str = "medium"
     ):
         self.on_wake = on_wake_callback
+        self.on_interrupt = on_interrupt_callback
         self.sample_rate = sample_rate
         self.enabled = True
         self.sensitivity = sensitivity if sensitivity in RMS_THRESHOLDS else "medium"
@@ -53,13 +93,20 @@ class WakeWordDetector:
         self._partial_swan_count = 0
         self._recent_rms = deque(maxlen=35)  # ~2.24s energy memory (never decays to zero prematurely)
 
+        # Interruption tracking
+        self._interruption_gap_frames = 0
+        self._interruption_loud_frames = 0
+        self._last_interrupt_time = 0.0
+
         if model_dir is None:
             model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "vosk-model-small-en-us-0.15")
         
         self.model_dir = model_dir
         self.model = None
         self.grammar = json.dumps(GRAMMAR_WORDS)
+        self.interruption_grammar = json.dumps(INTERRUPTION_GRAMMAR_WORDS)
         self.recognizer = None
+        self.interruption_recognizer = None
 
         self._init_model()
 
@@ -76,6 +123,7 @@ class WakeWordDetector:
             vosk.SetLogLevel(-1)
             self.model = vosk.Model(self.model_dir)
             self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate, self.grammar)
+            self.interruption_recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate, self.interruption_grammar)
         except Exception as e:
             print(f"[ERROR] Failed to initialize Vosk model: {e}", flush=True)
 
@@ -83,9 +131,25 @@ class WakeWordDetector:
         with self._lock:
             self._partial_swan_count = 0
             self._recent_rms.clear()
+            self._interruption_gap_frames = 0
+            self._interruption_loud_frames = 0
             if self.model:
                 try:
                     self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate, self.grammar)
+                except Exception:
+                    pass
+                try:
+                    self.interruption_recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate, self.interruption_grammar)
+                except Exception:
+                    pass
+
+    def reset_interruption(self):
+        with self._lock:
+            self._interruption_gap_frames = 0
+            self._interruption_loud_frames = 0
+            if self.model:
+                try:
+                    self.interruption_recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate, self.interruption_grammar)
                 except Exception:
                     pass
 
@@ -168,4 +232,99 @@ class WakeWordDetector:
                 self.on_wake(suffix)
             except TypeError:
                 self.on_wake()
+
+    def process_interruption(self, pcm_bytes: bytes, mic_rms: float, speaker_rms: float):
+        """Processes mic audio chunks during assistant playback to detect interruption or dismissal keywords."""
+        if not pcm_bytes or self.on_interrupt is None or not self.interruption_recognizer:
+            return
+
+        now = time.time()
+        if now - self._last_interrupt_time < 0.8:
+            return
+
+        # Proportional Speaker Bleed Suppression:
+        # When assistant is playing audio from MacBook speakers, chassis vibration causes
+        # the internal microphone to register speaker audio at up to 85%-90% of speaker_rms.
+        # To prevent Swan's own voice from falsely interrupting itself:
+        # 1. If speakers are active (speaker_rms > 0.020), user speech must be clearly higher
+        #    than the acoustic bleed (at least 110% of speaker volume AND >= 0.055).
+        # 2. If speakers are quiet, direct user speech must meet minimum mic threshold (>= 0.030).
+        if speaker_rms > 0.020:
+            min_mic_for_interruption = max(0.055, speaker_rms * 1.10)
+            if mic_rms < min_mic_for_interruption:
+                return
+        elif mic_rms < 0.030:
+            return
+
+        def _check_text(text_str: str) -> tuple[bool, str, bool]:
+            """Returns (matched: bool, token: str, is_dismiss: bool)."""
+            if not text_str:
+                return False, "", False
+            clean = text_str.lower().strip()
+            words = clean.split()
+            if not words or words == ["[unk]"]:
+                return False, "", False
+
+            # 1. Dismiss phrases ("go away", "get lost", "disappear now", "good bye", "goodbye")
+            for phrase in DISMISS_PHRASES:
+                if phrase in clean:
+                    return True, phrase, True
+
+            # 2. Interruption phrases ("shut up", "hold on", "be quiet", "stop talking", "thats enough")
+            for phrase in INTERRUPTION_PHRASES:
+                if phrase in clean:
+                    return True, phrase, False
+
+            # 3. Dismiss keywords ("disappear", "dismiss", "hide", "leave", "exit", "close", "vanish")
+            real_words = [w for w in words if w != "[unk]"]
+            if real_words:
+                lead_words = set(real_words[:3])
+                dismiss_hit = lead_words.intersection(DISMISS_KEYWORDS)
+                if dismiss_hit:
+                    return True, list(dismiss_hit)[0], True
+
+                # 4. Interruption keywords ("stop", "cancel")
+                interrupt_hit = lead_words.intersection(INTERRUPTION_KEYWORDS)
+                if interrupt_hit:
+                    return True, list(interrupt_hit)[0], False
+
+            return False, "", False
+
+        interrupted = False
+        is_dismiss = False
+        reason = ""
+
+        with self._lock:
+            try:
+                if self.interruption_recognizer.AcceptWaveform(pcm_bytes):
+                    res = json.loads(self.interruption_recognizer.Result())
+                    text = res.get("text", "").lower().strip()
+                    matched, token, dismiss_flag = _check_text(text)
+                    if matched:
+                        interrupted = True
+                        is_dismiss = dismiss_flag
+                        reason = f"Keyword detected: '{token}' in '{text}'"
+                else:
+                    partial = json.loads(self.interruption_recognizer.PartialResult())
+                    p_text = partial.get("partial", "").lower().strip()
+                    if p_text:
+                        matched, token, dismiss_flag = _check_text(p_text)
+                        if matched:
+                            interrupted = True
+                            is_dismiss = dismiss_flag
+                            reason = f"Instant keyword: '{token}' in '{p_text}'"
+            except Exception:
+                pass
+
+        if interrupted:
+            self._last_interrupt_time = now
+            prefix = "🛑 [Instant Dismiss Fired]" if is_dismiss else "⚡ [Interruption Fired]"
+            print(f"{prefix} {reason} (mic_RMS: {mic_rms:.3f}, spk_RMS: {speaker_rms:.3f}, is_dismiss: {is_dismiss})", flush=True)
+            self.reset_interruption()
+            try:
+                self.on_interrupt(reason, is_dismiss=is_dismiss)
+            except TypeError:
+                self.on_interrupt(reason)
+            except Exception as e:
+                print(f"[ERROR in on_interrupt]: {e}", flush=True)
 

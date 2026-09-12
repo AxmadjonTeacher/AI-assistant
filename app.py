@@ -30,7 +30,7 @@ from config import config
 from audio_manager import AudioManager
 from hotkey_manager import HotkeyManager
 from gemini_client import GeminiLiveClient
-from tools import set_mode_callback
+from tools import set_mode_callback, set_dismiss_callback
 from hud_window import LiquidHUDWindow
 from menu_bar import SwanMenuBar
 from settings_window import SettingsWindow
@@ -53,7 +53,6 @@ class SwanApp:
             on_language_change=self._handle_language_change,
             on_sensitivity_change=self._handle_sensitivity_change,
             on_voice_change=self._handle_voice_change,
-            on_accent_change=self._handle_accent_change,
             on_respectful_toggle=self._handle_respectful_toggle,
             on_quit=self._quit
         )
@@ -64,7 +63,6 @@ class SwanApp:
             on_language_change=self._handle_language_change,
             on_sensitivity_change=self._handle_sensitivity_change,
             on_voice_change=self._handle_voice_change,
-            on_accent_change=self._handle_accent_change,
             on_respectful_toggle=self._handle_respectful_toggle,
             on_open_settings=self._open_settings,
             on_quit=self._quit
@@ -74,14 +72,17 @@ class SwanApp:
         self.audio_manager = AudioManager()
         self.client = GeminiLiveClient(initial_mode=config.mode)
         self.client.on_tool_executed = self._handle_tool_executed
+        set_dismiss_callback(self.dismiss)
 
         # 4. Wake Word & Hotkey
         self.wake_detector = WakeWordDetector(
             on_wake_callback=self._on_wake_word_triggered,
+            on_interrupt_callback=self._on_speech_interrupted,
             sample_rate=config.sample_rate_in,
             sensitivity=config.wake_sensitivity
         )
         self.audio_manager.set_wake_word_callback(self.wake_detector.process_audio)
+        self.audio_manager.set_interruption_callback(self.wake_detector.process_interruption)
 
         self.hotkey_manager = HotkeyManager(
             on_press=self._on_hotkey_press,
@@ -97,12 +98,17 @@ class SwanApp:
         self._running = True
         self._busy = False
         self._cancel_requested = False
+        self._interrupted = False
         self._active_turn_future = None
+        self._current_client_turn_task: Optional[asyncio.Task] = None
         self._hotkey_recording_start = 0.0
         self._keepalive_task = None
         self._active_transcript = ""
+        self._last_assistant_speech = ""
         self._active_prompt_label = "Listening, sir."
         self._active_action = ""
+        self._paused_media_on_wake = False
+        self._media_explicitly_stopped = False
 
     def start(self):
         """Starts background asyncio loop and runs Cocoa main event loop."""
@@ -145,7 +151,6 @@ class SwanApp:
         self.menu_bar.set_language(config.language)
         self.menu_bar.set_sensitivity(config.wake_sensitivity)
         self.menu_bar.set_voice(config.voice_name)
-        self.menu_bar.set_accent(config.accent)
         self.menu_bar.set_respectful(config.respectful_address)
         print(" Swan is ready! Say 'Swan' or 'Hey Swan', or hold Option + Shift.")
 
@@ -158,11 +163,14 @@ class SwanApp:
 
     async def _hud_rms_loop(self):
         """Continuously feeds audio energy RMS into the Liquid HUD when visible."""
+        last_rms = 0.0
         while self._running:
             if self.hud._is_visible:
                 rms = self.audio_manager.get_active_rms()
-                self.hud.set_audio_energy(rms)
-            await asyncio.sleep(0.033)
+                if abs(rms - last_rms) > 0.012 or rms > 0.04:
+                    last_rms = rms
+                    self.hud.set_audio_energy(rms)
+            await asyncio.sleep(0.05)
 
     def _open_settings(self):
         if hasattr(self, "settings_window") and self.settings_window:
@@ -172,7 +180,6 @@ class SwanApp:
                 language=config.language,
                 sensitivity=config.wake_sensitivity,
                 voice_name=config.voice_name,
-                accent=config.accent,
                 respectful=config.respectful_address
             )
             self.settings_window.show()
@@ -186,10 +193,36 @@ class SwanApp:
         hud_vis = getattr(self.hud, "_is_visible", False)
         return self._busy or self.audio_manager.is_recording() or self.audio_manager.is_playing() or hud_vis
 
+    def _on_speech_interrupted(self, reason: str = "", is_dismiss: bool = False):
+        """Called immediately when user speaks an interruption or dismiss keyword during assistant playback."""
+        print(f"🛑 [Barge-In] Playback interrupted: {reason} (is_dismiss={is_dismiss})", flush=True)
+
+        # 1. Instant Dismissal: Only on explicit command to vanish/disappear
+        explicit_dismiss_phrases = [
+            "disappear", "vanish", "go away", "get lost", "good bye", "goodbye",
+            "yo'qol", "yashirin", "ekrandan ket", "dam ol", "yo'q bo'l"
+        ]
+        is_explicit_dismiss = is_dismiss and any(w in reason.lower() for w in explicit_dismiss_phrases)
+        if is_explicit_dismiss:
+            print(f"💨 [Instant Vanish] User voice explicitly dismissed Swan ({reason}). Vanishing immediately.", flush=True)
+            self.dismiss()
+            return
+
+        # 2. Regular Interruption: stop audio playback immediately and transition to listening for user follow-up
+        self._interrupted = True
+        self.audio_manager.interrupt_playback()
+        self.hud.set_state("listening", "LISTENING", "Listening...")
+        self.menu_bar.set_status("Listening...")
+
+        # Immediately abort in-flight Gemini streaming task so assistant transitions to listening without delay
+        if self._current_client_turn_task and not self._current_client_turn_task.done() and self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._current_client_turn_task.cancel)
+
     def dismiss(self):
         """Immediately interrupts and dismisses Swan (via Escape or Option + Escape)."""
         print("🛑 [Dismiss] Hotkey/Escape triggered instant dismiss.", flush=True)
         self._cancel_requested = True
+        self._interrupted = True
 
         # 1. Stop audio playback immediately
         self.audio_manager.interrupt_playback()
@@ -212,6 +245,69 @@ class SwanApp:
         # 6. Re-arm wake detector
         self.wake_detector.reset()
         self._busy = False
+        self._resume_media_if_appropriate()
+
+    def _pause_media_if_playing(self) -> bool:
+        """Pauses playing media (Spotify or Apple Music) on macOS so user and assistant can communicate clearly."""
+        script = '''
+        set wasPlaying to false
+        tell application "System Events"
+            set procNames to name of every application process
+        end tell
+        if procNames contains "Spotify" then
+            try
+                tell application "Spotify"
+                    if player state is playing then
+                        pause
+                        set wasPlaying to true
+                    end if
+                end tell
+            end try
+        end if
+        if procNames contains "Music" then
+            try
+                tell application "Music"
+                    if player state is playing then
+                        pause
+                        set wasPlaying to true
+                    end if
+                end tell
+            end try
+        end if
+        return wasPlaying
+        '''
+        try:
+            res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=1.5)
+            was_playing = res.stdout.strip().lower() == "true"
+            if was_playing:
+                print("🎵 [Media Auto-Paused] Paused playing media so assistant can hear user clearly.", flush=True)
+            return was_playing
+        except Exception:
+            return False
+
+    def _resume_media_if_appropriate(self):
+        """Resumes media playback if it was paused on wake and user didn't explicitly ask to stop/pause."""
+        if getattr(self, "_paused_media_on_wake", False) and not getattr(self, "_media_explicitly_stopped", False):
+            self._paused_media_on_wake = False
+            script = '''
+            tell application "System Events"
+                set procNames to name of every application process
+            end tell
+            if procNames contains "Spotify" then
+                try
+                    tell application "Spotify" to play
+                end try
+            else if procNames contains "Music" then
+                try
+                    tell application "Music" to play
+                end try
+            end if
+            '''
+            try:
+                subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=1.5)
+                print("🎵 [Media Resumed] Resumed playback after conversation concluded.", flush=True)
+            except Exception:
+                pass
 
     def _toggle_wake_word(self):
         new_state = not self.wake_detector.enabled
@@ -224,7 +320,6 @@ class SwanApp:
                 language=config.language,
                 sensitivity=config.wake_sensitivity,
                 voice_name=config.voice_name,
-                accent=config.accent,
                 respectful=config.respectful_address
             )
         label = "Wake Word: ON" if new_state else "Wake Word: OFF"
@@ -251,7 +346,6 @@ class SwanApp:
                 language=config.language,
                 sensitivity=config.wake_sensitivity,
                 voice_name=config.voice_name,
-                accent=config.accent,
                 respectful=config.respectful_address
             )
         print(f" Switched mode to: {new_mode.upper()}")
@@ -271,7 +365,6 @@ class SwanApp:
                 language=new_lang,
                 sensitivity=config.wake_sensitivity,
                 voice_name=config.voice_name,
-                accent=config.accent,
                 respectful=config.respectful_address
             )
         lang_names = {"uz": "O'zbek tili", "en": "English", "tr": "Türkçe"}
@@ -293,7 +386,6 @@ class SwanApp:
                 language=config.language,
                 sensitivity=new_sens,
                 voice_name=config.voice_name,
-                accent=config.accent,
                 respectful=config.respectful_address
             )
         sens_names = {"low": "Low (Media Safe)", "medium": "Medium", "high": "High"}
@@ -301,7 +393,7 @@ class SwanApp:
         print(f"🎚️ [Wake Sensitivity Changed] Set to: {disp}", flush=True)
 
     def _handle_voice_change(self, new_voice: str):
-        if new_voice not in ["Aoede", "Charon", "Kore", "Fenrir", "Puck"]:
+        if new_voice not in ["Aoede", "Charon"]:
             return
         config.voice_name = new_voice
         config.save_persisted_settings()
@@ -315,30 +407,13 @@ class SwanApp:
                 language=config.language,
                 sensitivity=config.wake_sensitivity,
                 voice_name=new_voice,
-                accent=config.accent,
                 respectful=config.respectful_address
             )
         print(f"🎙️ [Voice Model Changed] Selected: {new_voice}", flush=True)
 
     def _handle_accent_change(self, new_accent: str):
-        if new_accent not in ["british", "american", "neutral"]:
-            return
-        config.accent = new_accent
-        config.save_persisted_settings()
-        if self.client:
-            self.client.set_accent(new_accent)
-        self.menu_bar.set_accent(new_accent)
-        if hasattr(self, "settings_window") and self.settings_window:
-            self.settings_window.update_state(
-                mode=self.client.active_mode,
-                wake_enabled=self.wake_detector.enabled,
-                language=config.language,
-                sensitivity=config.wake_sensitivity,
-                voice_name=config.voice_name,
-                accent=new_accent,
-                respectful=config.respectful_address
-            )
-        print(f"🗣️ [English Accent Changed] Selected: {new_accent}", flush=True)
+        # Deprecated: Accent feature removed in favor of natural native pronunciation
+        pass
 
     def _handle_respectful_toggle(self):
         new_state = not config.respectful_address
@@ -354,7 +429,6 @@ class SwanApp:
                 language=config.language,
                 sensitivity=config.wake_sensitivity,
                 voice_name=config.voice_name,
-                accent=config.accent,
                 respectful=new_state
             )
         label = "Enabled ('sir' / 'Janob' / 'efendim')" if new_state else "Disabled (Direct / No titles)"
@@ -436,10 +510,30 @@ class SwanApp:
             elif act == "volume":
                 return "Adjusting Volume..."
             return "Controlling Spotify..."
+        elif name in ["switch_tab", "switch_browser_tab", "change_tab", "select_tab"]:
+            idx = args.get("tab_index")
+            name_val = args.get("tab_name", "")
+            act = args.get("action", "switch")
+            if name_val:
+                return f"Switching to '{name_val}' Tab..."
+            elif idx is not None:
+                return f"Switching to Tab {idx}..."
+            elif act in ["next", "previous", "prev"]:
+                return "Switching Tab..."
+            elif act == "new":
+                return "Opening New Tab..."
+            elif act == "close":
+                return "Closing Tab..."
+        elif name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
+            return "Dismissing..."
         else:
             return f"{name.replace('_', ' ').title()}..."
 
     def _handle_tool_call(self, name: str, args: dict):
+        if name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
+            print(f"💨 [Tool Call Dismiss] Assistant dismissed via tool: {name}", flush=True)
+            self.dismiss()
+            return
         action_label = self._format_action_label(name, args)
         self._active_action = action_label
         print(f"⚙️ [Action Display] {action_label}", flush=True)
@@ -447,18 +541,35 @@ class SwanApp:
         self.menu_bar.set_status(f"Action: {action_label}")
 
     def _handle_tool_executed(self, name: str, args: dict, result: dict):
+        if name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
+            self.dismiss()
+            return
         action_label = self._format_action_label(name, args)
         self._active_action = action_label
         self.hud.set_state("speaking", "ACTION", action_label)
         self.menu_bar.set_status(f"Action: {action_label}")
+        if name in ["spotify_control", "system_control"]:
+            act = str((args or {}).get("action", "")).lower()
+            if act in ["pause", "stop"]:
+                self._media_explicitly_stopped = True
 
     # --- WAKE WORD FLOW ---
     def _on_wake_word_triggered(self, suffix: str = ""):
         print(f"🎙️ [WakeWord callback fired] running={self._running}, busy={self._busy}, recording={self.audio_manager.is_recording()}, suffix='{suffix}'", flush=True)
         if not self._running or self._busy or self.audio_manager.is_recording():
             return
+
+        # Immediate dismissal from wake suffix ("Swan, disappear", "Hey Swan, yo'qol")
+        clean_suffix = suffix.lower().strip()
+        dismiss_tokens = ["disappear", "go away", "get lost", "vanish", "yo'qol", "yashirin", "ekrandan ket", "dam ol", "yo'q bo'l"]
+        if any(tok == clean_suffix or clean_suffix.startswith(tok) for tok in dismiss_tokens):
+            print(f"💨 [Wake Suffix Dismiss] Immediate dismissal from wake phrase suffix: '{clean_suffix}'", flush=True)
+            self.dismiss()
+            return
+
         self._busy = True
         self._cancel_requested = False
+        self._interrupted = False
         self.wake_detector.enabled = False
         has_immediate_command = bool(suffix and len(suffix.strip().split()) >= 1 and suffix.strip() != "[unk]")
         if self._loop and self._loop.is_running():
@@ -470,6 +581,9 @@ class SwanApp:
     async def _handle_wake_cycle(self, has_immediate_command: bool = False):
         try:
             self._cancel_requested = False
+            self._interrupted = False
+            self._media_explicitly_stopped = False
+            self._paused_media_on_wake = await asyncio.to_thread(self._pause_media_if_playing)
             self.menu_bar.set_status("Listening...")
 
             # Proactively ensure the Gemini Live session is fresh
@@ -494,17 +608,20 @@ class SwanApp:
                 # 2. Show top liquid bar immediately
                 self.hud.show(state="wake", status="SWAN", subtitle=label)
 
-                # 3. Play voice acknowledgment (trimmed, crisp ~0.7s)
+                # 3. Play voice acknowledgment (trimmed, crisp ~1.0s)
                 if pcm_np is not None:
+                    self.audio_manager.set_interruption_callback(None)
                     self.audio_manager.play_prompt(pcm_np)
                     while self.audio_manager.is_playing() and not self._cancel_requested:
                         await asyncio.sleep(0.02)
+                    self.audio_manager.set_interruption_callback(self.wake_detector.process_interruption)
 
                 if self._cancel_requested:
                     return
 
-                # Clean 120ms decay buffer to prevent speaker echo bleed into mic
-                await asyncio.sleep(0.12)
+                # Clean 220ms decay buffer to prevent speaker hardware buffer/echo bleed into mic
+                if not self._interrupted:
+                    await asyncio.sleep(0.22)
 
             # 4. Multi-turn conversational loop (back-and-forth)
             conversation_active = True
@@ -512,47 +629,71 @@ class SwanApp:
             last_reply = ""
 
             while conversation_active and self._running and not self._cancel_requested:
-                if turn_number > 1:
+                was_interrupted = self._interrupted
+                self._interrupted = False
+
+                if was_interrupted:
+                    # User interrupted Swan! Active listening with crisp 3.5s timeout
+                    await asyncio.sleep(0.20)  # Let interruption utterance and echo clear
+                    self.hud.set_state("listening", "LISTENING", "Listening...")
+                    self.menu_bar.set_status("Listening...")
+                    turn_timeout = 3.5
+                elif turn_number > 1:
                     # Check if Gemini asked a clarifying question or ended with a question
                     is_question = "?" in last_reply or any(w in last_reply.lower() for w in ["what", "which", "how", "could you", "would you", "tell me", "please tell"])
                     if is_question:
                         self.hud.set_state("listening", "LISTENING", "Listening for reply...")
                         self.menu_bar.set_status("Listening for reply...")
                         turn_timeout = 6.5  # Ample time for user to think and answer Gemini's question
+                    elif not last_reply:
+                        self.hud.set_state("listening", "LISTENING", "Listening...")
+                        self.menu_bar.set_status("Listening...")
+                        turn_timeout = 5.0
                     else:
                         self.hud.set_state("listening", "LISTENING", "Listening for follow-up...")
                         self.menu_bar.set_status("Listening for follow-up...")
-                        turn_timeout = 3.5  # Fast clean auto-dismiss if task was simply executed
+                        turn_timeout = 4.0
                 else:
                     self.hud.set_state("listening", "LISTENING", "Listening...")
-                    turn_timeout = 5.0
+                    turn_timeout = 5.5
 
-                # Record user speech with snappy adaptive pause detection (0.65s for commands)
-                pcm_bytes = await self._listen_for_speech(
+                # Record user speech with adaptive pause detection
+                # Do NOT include preroll on interruption (to avoid capturing old playback or the word 'Stop')
+                include_preroll = (has_immediate_command and turn_number == 1)
+                pcm_bytes, live_speech = await self._listen_for_speech(
                     initial_timeout=turn_timeout,
-                    include_preroll=has_immediate_command and (turn_number == 1),
-                    max_duration=30.0
+                    include_preroll=include_preroll,
+                    max_duration=12.0
                 )
 
                 if self._cancel_requested:
                     break
 
-                if pcm_bytes and self.audio_manager.has_speech(pcm_bytes, energy_threshold=0.018, min_speech_duration=0.28):
+                if has_immediate_command and turn_number == 1:
+                    has_command = self.audio_manager.has_speech(pcm_bytes, energy_threshold=0.015, min_speech_duration=0.25)
+                else:
+                    has_command = live_speech and len(pcm_bytes) >= 3200
+
+                if has_command:
                     last_reply = await self._process_gemini_turn(pcm_bytes)
                     if self._cancel_requested:
                         break
                     turn_number += 1
 
                     # Wait for audio to finish playing
-                    while self.audio_manager.is_playing() and not self._cancel_requested:
-                        await asyncio.sleep(0.03)
+                    while self.audio_manager.is_playing() and not self._cancel_requested and not self._interrupted:
+                        await asyncio.sleep(0.02)
                     if self._cancel_requested:
                         break
-                    await asyncio.sleep(0.08) # Rapid 80ms decay
+                    if not self._interrupted:
+                        await asyncio.sleep(0.08) # Rapid 80ms decay
 
                     # Keep conversation loop alive for natural back-and-forth!
                 else:
-                    print(f"⏱️ [Conversation Finished] Completed {turn_number - 1} turns. Dismissing.", flush=True)
+                    if was_interrupted:
+                        print(f"🛑 [Interruption Closed] Swan stopped by user with no further command. Dismissing.", flush=True)
+                    else:
+                        print(f"⏱️ [Conversation Finished] Completed {turn_number - 1} turns. Dismissing.", flush=True)
                     conversation_active = False
 
             # Auto-hide HUD when conversation ends
@@ -563,6 +704,7 @@ class SwanApp:
         except asyncio.CancelledError:
             print("🛑 [Wake Cycle] Task cancelled cleanly.", flush=True)
         finally:
+            self._resume_media_if_appropriate()
             self.wake_detector.reset()
             self.wake_detector.enabled = True
             self._busy = False
@@ -571,12 +713,12 @@ class SwanApp:
         self,
         initial_timeout: float = 5.0,
         include_preroll: bool = False,
-        max_duration: float = 30.0
-    ) -> bytes:
+        max_duration: float = 12.0
+    ) -> tuple[bytes, bool]:
         """
-        Listens cleanly for user speech with ultra-responsive, adaptive pause detection.
-        - Commands (< 3.0s speech): triggers in 0.65s after user stops talking.
-        - Longer speech (>= 3.0s): triggers in 0.80s for natural sentence flow.
+        Listens cleanly for user speech with real-time adaptive noise-floor calibration.
+        Dynamically tracks background noise, room acoustics, or playing music, ensuring speech
+        activity and natural pause boundaries are accurately distinguished from ambient sound.
         """
         self.audio_manager.start_recording(play_chime=False, include_preroll=include_preroll)
         start_time = time.time()
@@ -584,6 +726,10 @@ class SwanApp:
         speech_start_time = time.time()
         speech_frames = 0
         last_speech_time = time.time()
+
+        # Dynamic ambient noise floor tracker
+        ambient_floor = max(0.010, self.audio_manager.current_rms)
+        calibrated_samples = []
 
         while time.time() - start_time < max_duration:
             if self._cancel_requested:
@@ -593,53 +739,84 @@ class SwanApp:
             await asyncio.sleep(0.02)
             rms = self.audio_manager.current_rms
 
-            if rms > 0.022:
+            # Continuously adapt ambient noise floor before speech starts or during silences
+            if not speech_started:
+                calibrated_samples.append(rms)
+                if len(calibrated_samples) <= 8:
+                    ambient_floor = min(calibrated_samples)
+                else:
+                    if rms < ambient_floor:
+                        ambient_floor = 0.85 * ambient_floor + 0.15 * rms
+                    elif rms < ambient_floor * 1.4:
+                        ambient_floor = 0.96 * ambient_floor + 0.04 * rms
+
+            # Adaptive dynamic thresholds relative to measured ambient floor
+            speech_trigger = max(0.024, ambient_floor * 1.50 + 0.006)
+            silence_threshold = max(0.018, ambient_floor * 1.20 + 0.003)
+
+            if rms > speech_trigger:
                 speech_frames += 1
-                if speech_frames >= 4 and not speech_started:
+                if speech_frames >= 3 and not speech_started:
                     speech_started = True
                     speech_start_time = time.time()
-                    print("🎙️ [Speech Detected] User speaking...", flush=True)
+                    print(f"🎙️ [Speech Detected] User speaking... (rms: {rms:.3f}, ambient floor: {ambient_floor:.3f})", flush=True)
                 if speech_started:
                     last_speech_time = time.time()
-            elif rms > 0.012 and speech_started:
-                # Keep speech alive during soft connecting words (um, uh, whispering)
+            elif rms > silence_threshold and speech_started:
+                # Soft connecting speech or vowels above ambient noise
                 last_speech_time = time.time()
             else:
                 speech_frames = max(0, speech_frames - 1)
                 if speech_started:
                     speech_len = last_speech_time - speech_start_time
-                    effective_pause = 0.65 if speech_len < 3.0 else 0.80
+                    if speech_len < 1.0:
+                        effective_pause = 1.15 # Room for natural pauses after wake word
+                    elif speech_len < 3.5:
+                        effective_pause = 0.80 # Snappy responsive trigger
+                    else:
+                        effective_pause = 0.90
                     if time.time() - last_speech_time > effective_pause:
-                        if speech_len < 0.25:
+                        if speech_len < 0.22:
                             # False start / breath / click - reset and keep waiting for real speech
                             speech_started = False
                             speech_frames = 0
                             continue
-                        print(f"🎙️ [End of Speech] Natural pause detected ({effective_pause:.2f}s).", flush=True)
+                        print(f"🎙️ [End of Speech] Natural pause detected ({effective_pause:.2f}s, ambient floor: {ambient_floor:.3f}).", flush=True)
                         break
                 elif time.time() - start_time > initial_timeout:
                     # User said nothing
-                    print(f"⏱️ [Inactivity] No speech started within {initial_timeout:.1f}s.", flush=True)
+                    print(f"⏱️ [Inactivity] No speech started within {initial_timeout:.1f}s (ambient floor: {ambient_floor:.3f}).", flush=True)
                     break
 
-        return self.audio_manager.stop_recording(play_chime=False)
+        if time.time() - start_time >= max_duration and speech_started:
+            print(f"⏱️ [Max Duration Limit] Finished recording after {max_duration:.1f}s cap.", flush=True)
+
+        return self.audio_manager.stop_recording(play_chime=False), speech_started
 
     # --- PUSH-TO-TALK HOTKEY FLOW ---
     def _on_hotkey_press(self):
         print(f"⌨️ [Hotkey press] running={self._running}, busy={self._busy}", flush=True)
-        if not self._running or self._busy:
+        if not self._running:
             return
+
+        # If Swan is currently speaking or processing, interrupt immediately and take over!
+        if self._busy:
+            self._interrupted = True
+            self.audio_manager.interrupt_playback()
+            if self._active_turn_future and not self._active_turn_future.done():
+                self._active_turn_future.cancel()
+            self._busy = False
+
         self.wake_detector.enabled = False
         self._active_action = ""
         if config.respectful_address:
-            lang_prompts = {"uz": "Eshitaman, Janob.", "tr": "Dinliyorum, efendim.", "en": "Listening, sir."}
+            self._active_prompt_label = "Eshtaman janob"
         else:
-            lang_prompts = {"uz": "Eshitaman.", "tr": "Dinliyorum.", "en": "Listening."}
-        self._active_prompt_label = lang_prompts.get(config.language, "Listening.")
+            self._active_prompt_label = "Eshtaman"
         self._hotkey_recording_start = time.time()
         self.audio_manager.start_recording()
-        self.menu_bar.set_status("Listening (Hotkey)...")
-        self.hud.show(state="listening", status="LISTENING", subtitle="Hold to speak...")
+        self.menu_bar.set_status("Tinglanmoqda (Hotkey)...")
+        self.hud.show(state="listening", status="LISTENING", subtitle="Gapiring...")
 
     def _on_hotkey_release(self):
         print(f"⌨️ [Hotkey release] running={self._running}, busy={self._busy}", flush=True)
@@ -663,27 +840,28 @@ class SwanApp:
 
     async def _handle_hotkey_turn(self, pcm_bytes: bytes):
         try:
+            self._interrupted = False
             reply = await self._process_gemini_turn(pcm_bytes)
-            if self._cancel_requested:
+            if self._cancel_requested or self._interrupted:
                 return
-            while self.audio_manager.is_playing() and not self._cancel_requested:
-                await asyncio.sleep(0.04)
-            if self._cancel_requested:
+            while self.audio_manager.is_playing() and not self._cancel_requested and not self._interrupted:
+                await asyncio.sleep(0.02)
+            if self._cancel_requested or self._interrupted:
                 return
             await asyncio.sleep(0.32)
 
             # If Gemini asked a question, listen for the follow-up answer hands-free!
             is_question = reply and ("?" in reply or any(w in reply.lower() for w in ["what", "which", "how", "could you", "would you", "tell me", "please tell"]))
-            if is_question and not self._cancel_requested:
+            if is_question and not self._cancel_requested and not self._interrupted:
                 self.hud.set_state("listening", "LISTENING", "Listening for reply...")
-                followup_pcm = await self._listen_for_speech(initial_timeout=6.5, max_duration=30.0)
-                if not self._cancel_requested and followup_pcm and self.audio_manager.has_speech(followup_pcm, energy_threshold=0.013, min_speech_duration=0.18):
+                followup_pcm, live_speech = await self._listen_for_speech(initial_timeout=6.5, max_duration=12.0)
+                if not self._cancel_requested and not self._interrupted and live_speech and followup_pcm and self.audio_manager.has_speech(followup_pcm, energy_threshold=0.013, min_speech_duration=0.18):
                     await self._process_gemini_turn(followup_pcm)
-                    while self.audio_manager.is_playing() and not self._cancel_requested:
-                        await asyncio.sleep(0.03)
+                    while self.audio_manager.is_playing() and not self._cancel_requested and not self._interrupted:
+                        await asyncio.sleep(0.02)
                     await asyncio.sleep(0.08)
 
-            if not self._cancel_requested:
+            if not self._cancel_requested and not self._interrupted:
                 self.hud.hide(delay=0.4)
                 self.menu_bar.set_status("Ready (Listening for 'Hey Swan')")
 
@@ -698,6 +876,8 @@ class SwanApp:
     # --- GEMINI TURN PROCESSING ---
     async def _process_gemini_turn(self, pcm_bytes: bytes) -> str:
         try:
+            self._interrupted = False
+            self.wake_detector.reset_interruption()
             self.hud.set_state("thinking", "THINKING", "Processing...")
             self.menu_bar.set_status("Thinking...")
             self._active_transcript = ""
@@ -706,6 +886,8 @@ class SwanApp:
 
             def on_audio_chunk(chunk: bytes):
                 nonlocal has_first_audio
+                if self._interrupted or self._cancel_requested:
+                    return
                 if not has_first_audio:
                     has_first_audio = True
                     # Only show the action if an action took place, otherwise show the acknowledgment label.
@@ -718,29 +900,58 @@ class SwanApp:
             def on_transcript_chunk(text: str):
                 self._active_transcript += text
                 # We strictly do NOT put streaming transcription text into the liquid pill HUD!
-                if not self._active_action:
+                if not self._active_action and not self._interrupted:
                     self.menu_bar.set_status("Swan: Speaking...")
 
             def on_tool_call(name: str, args: dict):
                 self._handle_tool_call(name, args)
 
-            latency = await self.client.send_audio_turn(
-                pcm_bytes=pcm_bytes,
-                on_audio_chunk=on_audio_chunk,
-                on_transcript_chunk=on_transcript_chunk,
-                on_tool_call=on_tool_call
+            turn_task = asyncio.create_task(
+                self.client.send_audio_turn(
+                    pcm_bytes=pcm_bytes,
+                    on_audio_chunk=on_audio_chunk,
+                    on_transcript_chunk=on_transcript_chunk,
+                    on_tool_call=on_tool_call
+                )
             )
-            print(f"⚡ [Swan Response] Latency: {latency:.2f}s | Reply: {self._active_transcript}", flush=True)
+            self._current_client_turn_task = turn_task
+
+            try:
+                latency = await turn_task
+                print(f"⚡ [Swan Response] Latency: {latency:.2f}s | Reply: {self._active_transcript}", flush=True)
+                if self._active_transcript:
+                    self._last_assistant_speech = self._active_transcript
+                    try:
+                        from memory_manager import memory_manager
+                        asyncio.create_task(memory_manager.maybe_extract_and_remember(self._active_transcript, self._active_transcript))
+                    except Exception:
+                        pass
+                elif self._active_action and not self._interrupted and not self._cancel_requested:
+                    action_confirm = "Buyrug'ingiz bajarildi, Janob."
+                    self._active_transcript = action_confirm
+                    self._last_assistant_speech = action_confirm
+                    print(f"ℹ️ [Auto Confirmation] Action was executed: {self._active_action}", flush=True)
+            except asyncio.CancelledError:
+                print("🛑 [Turn Task] Gemini turn streaming aborted by user interruption.", flush=True)
+                if self._active_transcript:
+                    self._last_assistant_speech = self._active_transcript
+                if self.client:
+                    self.client._needs_reconnect = True
+                return ""
+            finally:
+                self._current_client_turn_task = None
 
             # Wait for spoken audio to finish playing
-            while self.audio_manager.is_playing():
-                await asyncio.sleep(0.04)
+            while self.audio_manager.is_playing() and not self._cancel_requested and not self._interrupted:
+                await asyncio.sleep(0.02)
 
             return self._active_transcript
 
         except Exception as e:
             print(f"❌ [ERROR] Turn execution error: {e}", flush=True)
             self.hud.set_state("thinking", "ERROR", str(e)[:30])
+            if self.client:
+                asyncio.create_task(self.client.ensure_active_session())
             await asyncio.sleep(1.5)
             return ""
 
@@ -776,6 +987,17 @@ if __name__ == "__main__":
         sys.exit(0)
 
     app = SwanApp()
+
+    def _sig_handler(sig, frame):
+        print(f"\n🛑 Received signal {sig}, shutting down cleanly...", flush=True)
+        app._quit()
+
+    try:
+        signal.signal(signal.SIGINT, _sig_handler)
+        signal.signal(signal.SIGTERM, _sig_handler)
+    except Exception:
+        pass
+
     try:
         app.start()
     except KeyboardInterrupt:
@@ -789,3 +1011,8 @@ if __name__ == "__main__":
                 _lock_fd.close()
         except Exception:
             pass
+        if os.path.exists(LOCK_FILE):
+            try:
+                os.remove(LOCK_FILE)
+            except Exception:
+                pass

@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import time
@@ -12,7 +13,7 @@ from Cocoa import (
     NSWindowCollectionBehaviorStationary,
     NSWindowCollectionBehaviorIgnoresCycle,
     NSWindowCollectionBehaviorFullScreenAuxiliary,
-    NSURL, NSObject
+    NSURL, NSObject, NSEvent, NSPointInRect
 )
 from WebKit import WKWebView, WKWebViewConfiguration
 from PyObjCTools import AppHelper
@@ -50,17 +51,24 @@ class LiquidHUDWindow:
         self._init_window()
 
     def _update_frame_for_current_screen(self):
-        screen = NSScreen.mainScreen()
-        screen_frame = screen.frame() if screen else NSRect(NSPoint(0, 0), NSSize(1920, 1080))
-        win_w = 420
-        win_h = 76
+        mouse_loc = NSEvent.mouseLocation()
+        target_screen = None
+        for s in NSScreen.screens():
+            if NSPointInRect(mouse_loc, s.frame()):
+                target_screen = s
+                break
+        if not target_screen:
+            target_screen = NSScreen.mainScreen() or (NSScreen.screens()[0] if NSScreen.screens() else None)
+        screen_frame = target_screen.frame() if target_screen else NSRect(NSPoint(0, 0), NSSize(1440, 900))
+        win_w = 460
+        win_h = 88
         x = screen_frame.origin.x + (screen_frame.size.width - win_w) / 2.0
-        y = screen_frame.origin.y + screen_frame.size.height - win_h - 10.0
+        y = screen_frame.origin.y + screen_frame.size.height - win_h - 22.0
         self._on_screen_frame = NSRect(NSPoint(x, y), NSSize(win_w, win_h))
 
     def _init_window(self):
-        win_w = 420
-        win_h = 76
+        win_w = 460
+        win_h = 88
         self._update_frame_for_current_screen()
 
         # Borderless non-activating panel
@@ -69,8 +77,8 @@ class LiquidHUDWindow:
             self._on_screen_frame, style_mask, NSBackingStoreBuffered, False
         )
 
-        # Status window level floats cleanly above standard apps, full-screen apps, and menu bars
-        self.panel.setLevel_(NSStatusWindowLevel)
+        # ScreenSaver window level guarantees floating cleanly above ALL apps, full-screen windows and menu bars
+        self.panel.setLevel_(NSScreenSaverWindowLevel)
         self.panel.setOpaque_(False)
         self.panel.setBackgroundColor_(NSColor.clearColor())
         self.panel.setHasShadow_(False)
@@ -91,6 +99,8 @@ class LiquidHUDWindow:
         config = WKWebViewConfiguration.alloc().init()
         self.webview = WKWebView.alloc().initWithFrame_configuration_(NSRect(NSPoint(0, 0), NSSize(win_w, win_h)), config)
         self.webview.setValue_forKey_(False, "drawsBackground")
+        if hasattr(self.webview, "setUnderPageBackgroundColor_"):
+            self.webview.setUnderPageBackgroundColor_(NSColor.clearColor())
 
         self.nav_delegate = HUDNavDelegate.alloc().init()
         self.nav_delegate.on_loaded = self._on_page_loaded
@@ -111,11 +121,14 @@ class LiquidHUDWindow:
         self._pending_evals.clear()
 
     def _eval_js(self, js_code: str):
-        if not self._page_loaded:
-            self._pending_evals.append(js_code)
-            return
-        if self.webview:
-            self.webview.evaluateJavaScript_completionHandler_(js_code, None)
+        try:
+            if not self._page_loaded:
+                self._pending_evals.append(js_code)
+                return
+            if self.webview:
+                self.webview.evaluateJavaScript_completionHandler_(js_code, None)
+        except Exception:
+            pass
 
     def show(self, state: str = "wake", status: str = "SWAN", subtitle: str = "Listening"):
         self._show_token += 1
@@ -125,13 +138,17 @@ class LiquidHUDWindow:
         with self._lock:
             self._is_visible = True
 
-        # Dynamically place on current focused screen and show on top of all windows
-        self._update_frame_for_current_screen()
-        self.panel.setFrame_display_(self._on_screen_frame, True)
-        self.panel.orderFrontRegardless()
-        clean_status = status.replace("'", "\\'").replace('"', '\\"')
-        clean_sub = subtitle.replace("'", "\\'").replace('"', '\\"')
-        self._eval_js(f"window.showHUD('{state}', '{clean_status}', '{clean_sub}');")
+        try:
+            # Dynamically place on current focused screen and show on top of all windows
+            self._update_frame_for_current_screen()
+            self.panel.setFrame_display_(self._on_screen_frame, True)
+            self.panel.orderFrontRegardless()
+            state_json = json.dumps(state or "wake")
+            st_json = json.dumps(status or "SWAN")
+            sub_json = json.dumps(subtitle or "")
+            self._eval_js(f"window.showHUD({state_json}, {st_json}, {sub_json});")
+        except Exception:
+            pass
 
     def hide(self, delay: float = 0.0):
         token = self._show_token
@@ -162,13 +179,20 @@ class LiquidHUDWindow:
         AppHelper.callAfter(self._main_set_state, state, status, subtitle)
 
     def _main_set_state(self, state: str, status: Optional[str], subtitle: Optional[str]):
-        st_arg = f"'{status.replace('\'', '\\\'')}'" if status else "null"
-        sub_arg = f"'{subtitle.replace('\'', '\\\'')}'" if subtitle is not None else "null"
-        self._eval_js(f"window.setState('{state}', {st_arg}, {sub_arg});")
+        try:
+            state_json = json.dumps(state or "wake")
+            st_arg = json.dumps(status) if status is not None else "null"
+            sub_arg = json.dumps(subtitle) if subtitle is not None else "null"
+            self._eval_js(f"window.setState({state_json}, {st_arg}, {sub_arg});")
+        except Exception:
+            pass
 
     def set_audio_energy(self, energy: float):
         AppHelper.callAfter(self._main_set_audio_energy, energy)
 
     def _main_set_audio_energy(self, energy: float):
-        clamped = max(0.0, min(1.0, float(energy)))
-        self._eval_js(f"window.setAudioEnergy({clamped});")
+        try:
+            clamped = max(0.0, min(1.0, float(energy)))
+            self._eval_js(f"window.setAudioEnergy({clamped});")
+        except Exception:
+            pass

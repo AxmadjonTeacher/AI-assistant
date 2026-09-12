@@ -1,4 +1,5 @@
 import os
+import json
 import threading
 from typing import Optional, Callable
 
@@ -28,7 +29,6 @@ class SettingsNavDelegate(NSObject):
         self.on_language_change = None
         self.on_sensitivity_change = None
         self.on_voice_change = None
-        self.on_accent_change = None
         self.on_respectful_toggle = None
         self.on_quit = None
         return self
@@ -52,10 +52,6 @@ class SettingsNavDelegate(NSObject):
                 voice = command.split("/")[1]
                 if hasattr(self, "on_voice_change") and self.on_voice_change:
                     self.on_voice_change(voice)
-            elif command.startswith("setAccent/"):
-                accent = command.split("/")[1]
-                if hasattr(self, "on_accent_change") and self.on_accent_change:
-                    self.on_accent_change(accent)
             elif command == "toggleRespectful":
                 if hasattr(self, "on_respectful_toggle") and self.on_respectful_toggle:
                     self.on_respectful_toggle()
@@ -72,6 +68,14 @@ class SettingsNavDelegate(NSObject):
             elif command == "quitApp":
                 if hasattr(self, "on_quit") and self.on_quit:
                     self.on_quit()
+            elif command == "clearMemory":
+                try:
+                    from memory_manager import memory_manager
+                    memory_manager.clear_memory()
+                    if hasattr(self, "on_memory_cleared") and self.on_memory_cleared:
+                        self.on_memory_cleared()
+                except Exception as e:
+                    print(f"Error clearing memory: {e}", flush=True)
             handler(0) # WKNavigationActionPolicyCancel
             return
         handler(1) # WKNavigationActionPolicyAllow
@@ -85,7 +89,6 @@ class SettingsWindow:
         on_language_change: Optional[Callable[[str], None]] = None,
         on_sensitivity_change: Optional[Callable[[str], None]] = None,
         on_voice_change: Optional[Callable[[str], None]] = None,
-        on_accent_change: Optional[Callable[[str], None]] = None,
         on_respectful_toggle: Optional[Callable[[], None]] = None,
         on_quit: Optional[Callable[[], None]] = None
     ):
@@ -95,7 +98,6 @@ class SettingsWindow:
         self.on_language_change = on_language_change
         self.on_sensitivity_change = on_sensitivity_change
         self.on_voice_change = on_voice_change
-        self.on_accent_change = on_accent_change
         self.on_respectful_toggle = on_respectful_toggle
         self.on_quit = on_quit
 
@@ -110,7 +112,6 @@ class SettingsWindow:
         self._current_lang = "uz"
         self._current_sens = "medium"
         self._current_voice = "Aoede"
-        self._current_accent = "british"
         self._current_respectful = True
 
         self._init_window()
@@ -129,22 +130,22 @@ class SettingsWindow:
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             rect, style_mask, NSBackingStoreBuffered, False
         )
+        self.window.setTitle_("Swan Settings & Preferences")
+        self.window.setTitlebarAppearsTransparent_(True)
+        self.window.setTitleVisibility_(1)
+        self.window.setOpaque_(False)
+        self.window.setBackgroundColor_(NSColor.clearColor())
+        self.window.setMovableByWindowBackground_(True)
+        self.window.setLevel_(3)
 
         self.delegate = SettingsWindowDelegate.alloc().init()
         self.window.setDelegate_(self.delegate)
-        self.window.setReleasedWhenClosed_(False)
-        self.window.setTitlebarAppearsTransparent_(True)
-        self.window.setTitleVisibility_(1) # NSWindowTitleHidden
-        self.window.setOpaque_(False)
-        self.window.setBackgroundColor_(NSColor.colorWithRed_green_blue_alpha_(14/255.0, 16/255.0, 23/255.0, 0.96))
-        self.window.center()
 
-        # WebKit view
         config = WKWebViewConfiguration.alloc().init()
-        self.webview = WKWebView.alloc().initWithFrame_configuration_(
-            NSRect(NSPoint(0, 0), NSSize(width, height)), config
-        )
+        self.webview = WKWebView.alloc().initWithFrame_configuration_(rect, config)
         self.webview.setValue_forKey_(False, "drawsBackground")
+        if hasattr(self.webview, "setUnderPageBackgroundColor_"):
+            self.webview.setUnderPageBackgroundColor_(NSColor.clearColor())
 
         self.nav_delegate = SettingsNavDelegate.alloc().init()
         self.nav_delegate.on_close = self.hide
@@ -154,7 +155,6 @@ class SettingsWindow:
         self.nav_delegate.on_language_change = self.on_language_change
         self.nav_delegate.on_sensitivity_change = self.on_sensitivity_change
         self.nav_delegate.on_voice_change = self.on_voice_change
-        self.nav_delegate.on_accent_change = self.on_accent_change
         self.nav_delegate.on_respectful_toggle = self.on_respectful_toggle
         self.nav_delegate.on_quit = self.on_quit
         self.webview.setNavigationDelegate_(self.nav_delegate)
@@ -175,7 +175,7 @@ class SettingsWindow:
             self.window.makeKeyAndOrderFront_(None)
             self._main_update_state(
                 self._current_mode, self._current_wake, self._current_lang,
-                self._current_sens, self._current_voice, self._current_accent, self._current_respectful
+                self._current_sens, self._current_voice, self._current_respectful
             )
 
     def hide(self):
@@ -187,7 +187,7 @@ class SettingsWindow:
 
     def update_state(
         self, mode: str, wake_enabled: bool, language: str = None,
-        sensitivity: str = None, voice_name: str = None, accent: str = None, respectful: bool = None
+        sensitivity: str = None, voice_name: str = None, respectful: bool = None
     ):
         self._current_mode = mode
         self._current_wake = wake_enabled
@@ -197,24 +197,28 @@ class SettingsWindow:
             self._current_sens = sensitivity
         if voice_name:
             self._current_voice = voice_name
-        if accent:
-            self._current_accent = accent
         if respectful is not None:
             self._current_respectful = respectful
         AppHelper.callAfter(
             self._main_update_state, self._current_mode, self._current_wake,
-            self._current_lang, self._current_sens, self._current_voice, self._current_accent, self._current_respectful
+            self._current_lang, self._current_sens, self._current_voice, self._current_respectful
         )
 
     def _main_update_state(
         self, mode: str, wake_enabled: bool, language: str,
-        sensitivity: str, voice_name: str, accent: str, respectful: bool
+        sensitivity: str, voice_name: str, respectful: bool
     ):
         if self.webview:
             wake_bool = "true" if wake_enabled else "false"
             resp_bool = "true" if respectful else "false"
+            facts_json = "[]"
+            try:
+                from memory_manager import memory_manager
+                facts_json = json.dumps(memory_manager.get_learned_facts())
+            except Exception:
+                pass
             js = (
                 f"if (window.updateSettingsState) updateSettingsState("
-                f"'{mode}', {wake_bool}, '{language}', '{sensitivity}', '{voice_name}', '{accent}', {resp_bool});"
+                f"'{mode}', {wake_bool}, '{language}', '{sensitivity}', '{voice_name}', {resp_bool}, {facts_json});"
             )
             self.webview.evaluateJavaScript_completionHandler_(js, None)

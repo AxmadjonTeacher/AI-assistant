@@ -40,6 +40,7 @@ class AudioManager:
         self._play_queue = queue.Queue()
         self._running = True
         self._is_playing = False
+        self._interrupted_playback = False
 
         # Synthesize chimes (at output sample rate: 24kHz)
         self.start_chime = generate_chime([587.33, 880.0], volume=0.10)   # D5 -> A5
@@ -53,6 +54,7 @@ class AudioManager:
         self._wake_thread = None
         self._wake_queue = queue.Queue(maxsize=150)
         self.wake_word_callback = None
+        self.interruption_callback = None
         self.speaker_rms = 0.0
 
         self._start()
@@ -60,25 +62,34 @@ class AudioManager:
     def set_wake_word_callback(self, cb):
         self.wake_word_callback = cb
 
-    def _start(self):
-        # Input Stream (16kHz 16-bit mono)
-        self._in_stream = sd.InputStream(
-            samplerate=self.sr_in,
-            channels=self.channels,
-            dtype='int16',
-            blocksize=1024,
-            callback=self._mic_callback
-        )
-        self._in_stream.start()
+    def set_interruption_callback(self, cb):
+        self.interruption_callback = cb
 
-        # Output Stream (24kHz 16-bit native stereo/mono matching hardware)
-        self._out_stream = sd.OutputStream(
-            samplerate=self.sr_out,
-            channels=self.channels_out,
-            dtype='int16',
-            blocksize=1024
-        )
-        self._out_stream.start()
+    def _start(self):
+        try:
+            # Input Stream (16kHz 16-bit mono)
+            self._in_stream = sd.InputStream(
+                samplerate=self.sr_in,
+                channels=self.channels,
+                dtype='int16',
+                blocksize=1024,
+                callback=self._mic_callback
+            )
+            self._in_stream.start()
+        except Exception as e:
+            print(f"⚠️ [AudioManager] Failed to open microphone input stream: {e}", flush=True)
+
+        try:
+            # Output Stream (24kHz 16-bit native stereo/mono matching hardware)
+            self._out_stream = sd.OutputStream(
+                samplerate=self.sr_out,
+                channels=self.channels_out,
+                dtype='int16',
+                blocksize=1024
+            )
+            self._out_stream.start()
+        except Exception as e:
+            print(f"⚠️ [AudioManager] Failed to open speaker output stream: {e}", flush=True)
 
         self._playback_thread = threading.Thread(target=self._playback_worker, daemon=True)
         self._playback_thread.start()
@@ -100,11 +111,13 @@ class AudioManager:
             if self._recording:
                 self._record_buffer.append(chunk)
 
-        if not self._recording and self.wake_word_callback and not self._is_playing:
-            try:
-                self._wake_queue.put_nowait(chunk.tobytes())
-            except queue.Full:
-                pass
+        # Enqueue mic chunks for idle wake detection OR playback interruption detection
+        if not self._recording:
+            if (self.wake_word_callback and not self._is_playing) or (self.interruption_callback and self._is_playing):
+                try:
+                    self._wake_queue.put_nowait(chunk.tobytes())
+                except queue.Full:
+                    pass
 
     def _wake_worker(self):
         while self._running:
@@ -112,7 +125,16 @@ class AudioManager:
                 pcm_bytes = self._wake_queue.get(timeout=0.08)
             except queue.Empty:
                 continue
-            if self.wake_word_callback and not self._recording and not self._is_playing:
+
+            if self._recording:
+                continue
+
+            if self._is_playing and self.interruption_callback:
+                try:
+                    self.interruption_callback(pcm_bytes, self.current_rms, self.speaker_rms)
+                except Exception:
+                    pass
+            elif not self._is_playing and self.wake_word_callback:
                 try:
                     self.wake_word_callback(pcm_bytes)
                 except Exception:
@@ -181,15 +203,22 @@ class AudioManager:
 
         return False
 
+    def has_preroll(self) -> bool:
+        """Returns True if recent mic preroll audio buffer contains frames."""
+        with self._record_lock:
+            return len(self._preroll_buffer) > 0
+
     def play_audio_chunk(self, pcm_bytes: bytes):
         """Enqueue PCM bytes (24kHz int16 mono) for gapless playback."""
         if not pcm_bytes or not self._running:
             return
+        self._interrupted_playback = False
         audio_np = np.frombuffer(pcm_bytes, dtype=np.int16)
         self._play_queue.put(audio_np)
 
     def interrupt_playback(self):
         """Immediately stops queued playback (barge-in)."""
+        self._interrupted_playback = True
         while not self._play_queue.empty():
             try:
                 self._play_queue.get_nowait()
@@ -197,6 +226,7 @@ class AudioManager:
             except Exception:
                 break
         self._is_playing = False
+        self.speaker_rms = 0.0
 
     def is_playing(self) -> bool:
         return self._is_playing or not self._play_queue.empty()
@@ -204,6 +234,7 @@ class AudioManager:
     def play_prompt(self, pcm_np: np.ndarray):
         """Immediately plays a short pre-buffered voice prompt."""
         self.interrupt_playback()
+        self._interrupted_playback = False
         self._play_queue.put(pcm_np)
 
     def get_active_rms(self) -> float:
@@ -235,23 +266,28 @@ class AudioManager:
                 else:
                     out_chunk = chunk
 
-                if self._out_stream and not self._out_stream.closed:
-                    try:
-                        self._out_stream.write(out_chunk)
-                    except Exception:
-                        # Auto-recover stream if AUHAL went stale/errored
+                # Sliced write in 1024-sample blocks (~42ms) so interruptions abort immediately
+                step = 1024
+                for i in range(0, len(out_chunk), step):
+                    if not self._running or self._interrupted_playback:
+                        break
+                    sub_chunk = out_chunk[i : i + step]
+                    if self._out_stream and not self._out_stream.closed:
                         try:
-                            self._out_stream.close()
-                            self._out_stream = sd.OutputStream(
-                                samplerate=self.sr_out,
-                                channels=self.channels_out,
-                                dtype='int16',
-                                blocksize=1024
-                            )
-                            self._out_stream.start()
-                            self._out_stream.write(out_chunk)
+                            self._out_stream.write(sub_chunk)
                         except Exception:
-                            pass
+                            try:
+                                self._out_stream.close()
+                                self._out_stream = sd.OutputStream(
+                                    samplerate=self.sr_out,
+                                    channels=self.channels_out,
+                                    dtype='int16',
+                                    blocksize=1024
+                                )
+                                self._out_stream.start()
+                                self._out_stream.write(sub_chunk)
+                            except Exception:
+                                pass
             except Exception:
                 pass
             finally:

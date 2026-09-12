@@ -57,36 +57,6 @@ class MenuBarActionTarget(NSObject):
             self.on_voice_change("Charon")
 
     @objc.IBAction
-    def setVoiceKore_(self, sender):
-        if hasattr(self, "on_voice_change") and self.on_voice_change:
-            self.on_voice_change("Kore")
-
-    @objc.IBAction
-    def setVoiceFenrir_(self, sender):
-        if hasattr(self, "on_voice_change") and self.on_voice_change:
-            self.on_voice_change("Fenrir")
-
-    @objc.IBAction
-    def setVoicePuck_(self, sender):
-        if hasattr(self, "on_voice_change") and self.on_voice_change:
-            self.on_voice_change("Puck")
-
-    @objc.IBAction
-    def setAccentBritish_(self, sender):
-        if hasattr(self, "on_accent_change") and self.on_accent_change:
-            self.on_accent_change("british")
-
-    @objc.IBAction
-    def setAccentAmerican_(self, sender):
-        if hasattr(self, "on_accent_change") and self.on_accent_change:
-            self.on_accent_change("american")
-
-    @objc.IBAction
-    def setAccentNeutral_(self, sender):
-        if hasattr(self, "on_accent_change") and self.on_accent_change:
-            self.on_accent_change("neutral")
-
-    @objc.IBAction
     def toggleRespectful_(self, sender):
         if hasattr(self, "on_respectful_toggle") and self.on_respectful_toggle:
             self.on_respectful_toggle()
@@ -109,7 +79,6 @@ class SwanMenuBar:
         on_language_change: Optional[Callable[[str], None]] = None,
         on_sensitivity_change: Optional[Callable[[str], None]] = None,
         on_voice_change: Optional[Callable[[str], None]] = None,
-        on_accent_change: Optional[Callable[[str], None]] = None,
         on_respectful_toggle: Optional[Callable[[], None]] = None,
         on_open_settings: Optional[Callable[[], None]] = None,
         on_quit: Optional[Callable[[], None]] = None
@@ -119,7 +88,6 @@ class SwanMenuBar:
         self.on_language_change = on_language_change
         self.on_sensitivity_change = on_sensitivity_change
         self.on_voice_change = on_voice_change
-        self.on_accent_change = on_accent_change
         self.on_respectful_toggle = on_respectful_toggle
         self.on_open_settings = on_open_settings
         self.on_quit = on_quit
@@ -132,14 +100,12 @@ class SwanMenuBar:
         self.lang_parent_item = None
         self.sens_parent_item = None
         self.voice_parent_item = None
-        self.accent_parent_item = None
         self.respectful_menu_item = None
         self.target = None
 
         self._lang_items = {}
         self._sens_items = {}
         self._voice_items = {}
-        self._accent_items = {}
 
         self._init_menu_bar()
 
@@ -154,7 +120,6 @@ class SwanMenuBar:
         self.target.on_language_change = self.on_language_change
         self.target.on_sensitivity_change = self.on_sensitivity_change
         self.target.on_voice_change = self.on_voice_change
-        self.target.on_accent_change = self.on_accent_change
         self.target.on_respectful_toggle = self.on_respectful_toggle
         self.target.on_open_settings = self.on_open_settings
         self.target.on_quit = self.on_quit
@@ -212,36 +177,17 @@ class SwanMenuBar:
 
         self.menu.addItem_(NSMenuItem.separatorItem())
 
-        # Item 3c: Language Submenu
-        lang_menu = NSMenu.alloc().init()
-        self._lang_items["uz"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "O'zbek tili (Uzbek)", objc.selector(self.target.setLanguageUz_, signature=b"v@:@"), ""
-        )
-        self._lang_items["uz"].setTarget_(self.target)
-        lang_menu.addItem_(self._lang_items["uz"])
-
-        self._lang_items["en"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "English", objc.selector(self.target.setLanguageEn_, signature=b"v@:@"), ""
-        )
-        self._lang_items["en"].setTarget_(self.target)
-        lang_menu.addItem_(self._lang_items["en"])
-
-        self._lang_items["tr"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Türkçe (Turkish)", objc.selector(self.target.setLanguageTr_, signature=b"v@:@"), ""
-        )
-        self._lang_items["tr"].setTarget_(self.target)
-        lang_menu.addItem_(self._lang_items["tr"])
-
+        # Item 3c: Language (Uzbek only)
         self.lang_parent_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Language: O'zbek tili", None, ""
         )
-        self.lang_parent_item.setSubmenu_(lang_menu)
+        self.lang_parent_item.setEnabled_(False)
         self.menu.addItem_(self.lang_parent_item)
 
         # Item 3d: Voice Model Submenu
         voice_menu = NSMenu.alloc().init()
         self._voice_items["Aoede"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Aoede (Female - Natural & Poised)", objc.selector(self.target.setVoiceAoede_, signature=b"v@:@"), ""
+            "Aoede (Female - Calm & Soothing)", objc.selector(self.target.setVoiceAoede_, signature=b"v@:@"), ""
         )
         self._voice_items["Aoede"].setTarget_(self.target)
         voice_menu.addItem_(self._voice_items["Aoede"])
@@ -252,57 +198,13 @@ class SwanMenuBar:
         self._voice_items["Charon"].setTarget_(self.target)
         voice_menu.addItem_(self._voice_items["Charon"])
 
-        self._voice_items["Kore"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Kore (Female - Calm & Soothing)", objc.selector(self.target.setVoiceKore_, signature=b"v@:@"), ""
-        )
-        self._voice_items["Kore"].setTarget_(self.target)
-        voice_menu.addItem_(self._voice_items["Kore"])
-
-        self._voice_items["Fenrir"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Fenrir (Male - Authoritative)", objc.selector(self.target.setVoiceFenrir_, signature=b"v@:@"), ""
-        )
-        self._voice_items["Fenrir"].setTarget_(self.target)
-        voice_menu.addItem_(self._voice_items["Fenrir"])
-
-        self._voice_items["Puck"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Puck (Male - Upbeat & Energetic)", objc.selector(self.target.setVoicePuck_, signature=b"v@:@"), ""
-        )
-        self._voice_items["Puck"].setTarget_(self.target)
-        voice_menu.addItem_(self._voice_items["Puck"])
-
         self.voice_parent_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Voice: Aoede", None, ""
         )
         self.voice_parent_item.setSubmenu_(voice_menu)
         self.menu.addItem_(self.voice_parent_item)
 
-        # Item 3e: English Accent Submenu
-        accent_menu = NSMenu.alloc().init()
-        self._accent_items["british"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "🇬🇧 British Butler (RP)", objc.selector(self.target.setAccentBritish_, signature=b"v@:@"), ""
-        )
-        self._accent_items["british"].setTarget_(self.target)
-        accent_menu.addItem_(self._accent_items["british"])
-
-        self._accent_items["american"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "🇺🇸 American (General American)", objc.selector(self.target.setAccentAmerican_, signature=b"v@:@"), ""
-        )
-        self._accent_items["american"].setTarget_(self.target)
-        accent_menu.addItem_(self._accent_items["american"])
-
-        self._accent_items["neutral"] = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "🌐 Neutral (Clean)", objc.selector(self.target.setAccentNeutral_, signature=b"v@:@"), ""
-        )
-        self._accent_items["neutral"].setTarget_(self.target)
-        accent_menu.addItem_(self._accent_items["neutral"])
-
-        self.accent_parent_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Accent: British", None, ""
-        )
-        self.accent_parent_item.setSubmenu_(accent_menu)
-        self.menu.addItem_(self.accent_parent_item)
-
-        # Item 3f: Respectful Address Toggle
+        # Item 3e: Respectful Address Toggle
         self.respectful_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             "Respectful Address: Enabled ('sir' / 'Janob')", objc.selector(self.target.toggleRespectful_, signature=b"v@:@"), ""
         )
@@ -403,16 +305,8 @@ class SwanMenuBar:
         AppHelper.callAfter(self._main_set_language, lang)
 
     def _main_set_language(self, lang: str):
-        names = {
-            "uz": "O'zbek tili",
-            "en": "English",
-            "tr": "Türkçe"
-        }
-        name = names.get(lang, "English")
         if self.lang_parent_item:
-            self.lang_parent_item.setTitle_(f"Language: {name}")
-        for code, item in self._lang_items.items():
-            item.setState_(1 if code == lang else 0)
+            self.lang_parent_item.setTitle_("Language: O'zbek tili")
 
     def set_sensitivity(self, sens: str):
         AppHelper.callAfter(self._main_set_sensitivity, sens)
@@ -439,19 +333,8 @@ class SwanMenuBar:
             item.setState_(1 if code == voice else 0)
 
     def set_accent(self, accent: str):
-        AppHelper.callAfter(self._main_set_accent, accent)
-
-    def _main_set_accent(self, accent: str):
-        names = {
-            "british": "British Butler (RP)",
-            "american": "General American",
-            "neutral": "Neutral"
-        }
-        name = names.get(accent, "British")
-        if self.accent_parent_item:
-            self.accent_parent_item.setTitle_(f"Accent: {name}")
-        for code, item in self._accent_items.items():
-            item.setState_(1 if code == accent else 0)
+        # Deprecated: Accent feature removed
+        pass
 
     def set_respectful(self, enabled: bool):
         AppHelper.callAfter(self._main_set_respectful, enabled)

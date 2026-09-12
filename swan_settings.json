@@ -1,8 +1,7 @@
 {
-  "language": "en",
+  "language": "uz",
   "wake_sensitivity": "medium",
-  "mode": "command",
-  "voice_name": "Kore",
-  "accent": "neutral",
+  "mode": "chat",
+  "voice_name": "Aoede",
   "respectful_address": true
 }

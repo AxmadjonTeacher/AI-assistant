@@ -22,17 +22,14 @@ Swan is an ultra-refined, discreet, and devoted personal AI operating assistant 
 
 ### 3. 🌍 Multilingual Intelligence & Dynamic Language Switching
 Swan automatically detects the language spoken by the user on every turn and responds in that exact language with flawless native pronunciation:
-- **English:** British Butler (Received Pronunciation) or General American.
+- **English:** Natural, clear, fluent English.
 - **Uzbek (O'zbekcha):** Pure literary Uzbek addressing the user as *"Janob"*.
 - **Turkish (Türkçe):** Fluent standard Turkish addressing the user as *"efendim"*.
 
-### 4. 🎙️ Voice Models & Character Personalities
-Choose from 5 native Gemini Live neural voice models:
-- **Kore (Calm / British):** Distinguished, calm, executive assistant.
-- **Charon (Male Butler / Jarvis):** Deep, authoritative, confident butler.
-- **Aoede (Female / American):** Poised, crisp, natural.
-- **Fenrir (Male / Resonant):** Deep and grounding.
-- **Puck (Male / Upbeat):** Energetic and lively.
+### 4. 🎙️ Refined Neural Voice Models
+Streamlined to 2 native Gemini Live neural voice models with full multilingual studio prompts:
+- **Aoede (Female):** Calm, soothing, poised executive assistant.
+- **Charon (Male):** Deep, authoritative, distinguished butler (Jarvis style).
 
 ### 5. 🎩 Respectful Address Toggle
 - **Enabled (Default):** Addresses the user with titles (*"sir"*, *"Janob"*, *"efendim"*).
@@ -57,7 +54,7 @@ Access the preferences window from the menu bar (`🦢` ➔ **Preferences...**) 
 - **Assistant Persona:** Switch between Command Mode (system actions) and Chat Mode (conversational partner).
 - **Language Selection:** Default language (Uzbek, Turkish, English).
 - **Wake Word Sensitivity:** Low (filters background YouTube/TV noise), Medium (balanced), High.
-- **Voice Model & Accent:** Select model and British/American accent.
+- **Voice Model:** Select between Aoede (Female) and Charon (Male).
 - **Respectful Address:** Toggle honorific titles on/off.
 
 ---
@@ -72,7 +69,7 @@ Access the preferences window from the menu bar (`🦢` ➔ **Preferences...**) 
 | **`wake_word_detector.py`** | Ultra-responsive offline Vosk wake word recognizer (< 20ms) with rolling RMS memory and phonetic distractor filtering. |
 | **`tools.py`** | Native macOS tools: Spotify control (`spotify_cli`), Finder file management, app launch/quit, Apple Notes, Reminders, system controls. |
 | **`gemini_client.py`** | Bidirectional real-time Gemini Live WebSocket client (`LiveConnectConfig`) with session warming and keep-alive. |
-| **`config.py`** | System instructions, prompts, accent steering, and persistent user configuration loader (`swan_settings.json`). |
+| **`config.py`** | System instructions, prompts, and persistent user configuration loader (`swan_settings.json`). |
 | **`hud_window.py`** | Floating macOS WKWebView transparent HUD window controller. |
 | **`hud_template.html`** | HTML/CSS/JS frontend for the liquid glass dynamic pill HUD with smooth CSS animations. |
 | **`settings_window.py`** | macOS WKWebView controller for the Apple-style Settings and Preferences window. |
@@ -105,8 +102,7 @@ rm -f /tmp/swan_assistant.lock
   "language": "en",
   "wake_sensitivity": "medium",
   "mode": "command",
-  "voice_name": "Kore",
-  "accent": "british",
+  "voice_name": "Aoede",
   "respectful_address": true
 }
 ```

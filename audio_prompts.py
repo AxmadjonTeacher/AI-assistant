@@ -8,11 +8,6 @@ class AudioPromptsManager:
         self.sounds_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), sounds_dir)
         # Structure: prompts[voice_key][lang][respectful: bool]
         self.prompts = {
-            "kore": {
-                "en": {True: [], False: []},
-                "uz": {True: [], False: []},
-                "tr": {True: [], False: []}
-            },
             "aoede": {
                 "en": {True: [], False: []},
                 "uz": {True: [], False: []},
@@ -45,34 +40,26 @@ class AudioPromptsManager:
 
     def _load_prompts(self):
         definitions = [
-            # KORE (British / Calm)
-            ("kore", "en", True, "kore_en_yes_sir.wav", "Yes, sir."),
-            ("kore", "en", True, "kore_en_listening_sir.wav", "Listening, sir."),
-            ("kore", "en", False, "kore_en_listening_plain.wav", "Listening."),
-
-            # AOEDE (American / Female)
+            # AOEDE (Female - Calm & Soothing)
             ("aoede", "en", True, "ack_yes_sir.wav", "Yes, sir."),
             ("aoede", "en", True, "ack_listening.wav", "Listening, sir."),
             ("aoede", "en", False, "ack_en_listening_plain.wav", "Listening."),
 
-            ("aoede", "uz", True, "ack_uz_buyuring.wav", "Buyuring, Janob."),
-            ("aoede", "uz", True, "ack_uz_eshitaman.wav", "Eshitaman, Janob."),
-            ("aoede", "uz", False, "ack_uz_buyuring_plain.wav", "Buyuring."),
-            ("aoede", "uz", False, "ack_uz_eshitaman_plain.wav", "Eshitaman."),
+            ("aoede", "uz", True, "ack_uz_eshitaman.wav", "Eshitaman janob"),
+            ("aoede", "uz", False, "ack_uz_eshitaman_plain.wav", "Eshitaman"),
 
             ("aoede", "tr", True, "ack_tr_emredersiniz.wav", "Emredersiniz, efendim."),
             ("aoede", "tr", True, "ack_tr_dinliyorum.wav", "Dinliyorum, efendim."),
             ("aoede", "tr", False, "ack_tr_emredersiniz_plain.wav", "Emredersiniz."),
             ("aoede", "tr", False, "ack_tr_dinliyorum_plain.wav", "Dinliyorum."),
 
-            # CHARON (Male Butler / Fenrir / Puck)
+            # CHARON (Male - Distinguished Butler)
             ("charon", "en", True, "charon_en_yes_sir.wav", "Yes, sir."),
             ("charon", "en", True, "charon_en_listening_sir.wav", "Listening, sir."),
             ("charon", "en", False, "charon_en_listening_plain.wav", "Listening."),
 
-            ("charon", "uz", True, "charon_uz_buyuring.wav", "Buyuring, Janob."),
-            ("charon", "uz", True, "charon_uz_eshitaman.wav", "Eshitaman, Janob."),
-            ("charon", "uz", False, "charon_uz_buyuring_plain.wav", "Buyuring."),
+            ("charon", "uz", True, "charon_uz_eshitaman.wav", "Eshitaman janob"),
+            ("charon", "uz", False, "charon_uz_eshitaman_plain.wav", "Eshitaman"),
 
             ("charon", "tr", True, "charon_tr_emredersiniz.wav", "Emredersiniz, efendim."),
             ("charon", "tr", True, "charon_tr_dinliyorum.wav", "Dinliyorum, efendim."),
@@ -83,29 +70,19 @@ class AudioPromptsManager:
             if p and voice_key in self.prompts:
                 self.prompts[voice_key][lang][respectful].append(p)
 
-    def get_random_prompt(self, language: str = "en", voice_name: str = "Aoede", respectful: bool = True):
-        """Returns a random acknowledgment prompt matching voice persona, language and respectful preference: (pcm_numpy_array, text_label)"""
+    def get_random_prompt(self, language: str = "uz", voice_name: str = "Aoede", respectful: bool = True):
+        """Returns a random acknowledgment prompt matching voice persona, language (Uzbek) and respectful preference: (pcm_numpy_array, text_label)"""
         v_low = (voice_name or "Aoede").lower()
 
-        # Map to known voice profile key
-        if v_low in ["charon", "fenrir", "puck"]:
+        # Map to Aoede (Female) or Charon (Male)
+        if "charon" in v_low:
             primary_key = "charon"
-            fallback_key = "charon"
-        elif v_low == "kore":
-            primary_key = "kore"
             fallback_key = "aoede"
         else:
             primary_key = "aoede"
-            fallback_key = "aoede"
+            fallback_key = "charon"
 
-        # Normalize language
-        lang_code = (language or "en").lower()
-        if "uz" in lang_code or "o'zbek" in lang_code or "ozbek" in lang_code:
-            target_lang = "uz"
-        elif "tr" in lang_code or "turk" in lang_code or "türk" in lang_code:
-            target_lang = "tr"
-        else:
-            target_lang = "en"
+        target_lang = "uz"
 
         # 1. Try primary voice key with requested language and respectful setting
         chosen_list = []
@@ -118,18 +95,13 @@ class AudioPromptsManager:
             lang_dict = self.prompts[primary_key].get(target_lang, {})
             chosen_list = lang_dict.get(not respectful) or []
 
-        # 3. Fall back to fallback voice key (e.g. Aoede for Uzbek/Turkish when Kore is selected)
+        # 3. Fall back to fallback voice key
         if not chosen_list and fallback_key in self.prompts:
             lang_dict = self.prompts[fallback_key].get(target_lang, {})
             chosen_list = lang_dict.get(respectful) or lang_dict.get(not respectful) or []
 
-        # 4. Ultimate English fallback
         if not chosen_list:
-            chosen_list = self.prompts.get(primary_key, {}).get("en", {}).get(True) or \
-                          self.prompts.get("aoede", {}).get("en", {}).get(True) or []
-
-        if not chosen_list:
-            fallback_text = "Listening, sir." if respectful else "Listening."
+            fallback_text = "Eshitaman, Janob." if respectful else "Eshitaman."
             return None, fallback_text
 
         chosen = random.choice(chosen_list)
