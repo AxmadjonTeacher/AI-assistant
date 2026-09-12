@@ -37,3 +37,8 @@ test.aiff
 test.wav
 cand_*.wav
 test_*.wav
+
+# Packaging outputs
+build/
+dist/
+*.spec

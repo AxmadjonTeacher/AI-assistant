@@ -99,7 +99,8 @@ class WakeWordDetector:
         self._last_interrupt_time = 0.0
 
         if model_dir is None:
-            model_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "vosk-model-small-en-us-0.15")
+            from resource_helper import get_resource_path
+            model_dir = get_resource_path(os.path.join("models", "vosk-model-small-en-us-0.15"))
         
         self.model_dir = model_dir
         self.model = None

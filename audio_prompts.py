@@ -3,9 +3,11 @@ import random
 import wave
 import numpy as np
 
+from resource_helper import get_resource_path
+
 class AudioPromptsManager:
     def __init__(self, sounds_dir: str = "sounds"):
-        self.sounds_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), sounds_dir)
+        self.sounds_dir = get_resource_path(sounds_dir)
         # Structure: prompts[voice_key][lang][respectful: bool]
         self.prompts = {
             "aoede": {

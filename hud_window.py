@@ -33,7 +33,8 @@ class HUDNavDelegate(NSObject):
 class LiquidHUDWindow:
     def __init__(self, template_path: Optional[str] = None):
         if template_path is None:
-            template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hud_template.html")
+            from resource_helper import get_resource_path
+            template_path = get_resource_path("hud_template.html")
         self.template_path = template_path
 
         self.panel = None

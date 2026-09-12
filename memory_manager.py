@@ -5,7 +5,9 @@ import re
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-MEMORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swan_memory.json")
+from resource_helper import get_data_path
+
+MEMORY_FILE = get_data_path("swan_memory.json")
 
 DEFAULT_MEMORY: Dict[str, Any] = {
     "owner": {

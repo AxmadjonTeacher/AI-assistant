@@ -106,7 +106,8 @@ class SettingsWindow:
         self.delegate = None
         self.nav_delegate = None
 
-        self._template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings_template.html")
+        from resource_helper import get_resource_path
+        self._template_path = get_resource_path("settings_template.html")
         self._current_mode = "command"
         self._current_wake = True
         self._current_lang = "uz"

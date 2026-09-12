@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swan AI — macOS uchun avtonom intellektual agent</title>
+  <meta name="description" content="macOS uchun maxsus yaratilgan, sof o'zbek tilida so'zlashuvchi avtonom sun'iy intellekt kompyuter agenti.">
+  <link rel="icon" type="image/png" href="swan_logo.png">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Ambient background glow -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- Navigation -->
+  <header class="nav-container">
+    <nav class="navbar">
+      <a href="#" class="brand">
+        <img src="swan_logo.png" alt="Swan Logo" class="nav-logo">
+        <span class="brand-text">Swan<span class="brand-accent">OS</span></span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Imkoniyatlar</a>
+        <a href="#demo">Interfeys</a>
+        <a href="#commands">Buyruqlar</a>
+        <a href="#install">O'rnatish</a>
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant" target="_blank" class="github-link">
+          <svg class="gh-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+      </div>
+      <a href="https://github.com/AxmadjonTeacher/AI-assistant/releases/latest/download/Swan.dmg" class="nav-btn">
+        <span>Yuklab olish</span>
+      </a>
+    </nav>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero-section">
+      <div class="hero-pill">
+        <span class="pill-dot"></span>
+        <span class="pill-text">macOS Sonoma & Sequoia uchun rasmiy reliz</span>
+      </div>
+
+      <h1 class="hero-title">
+        macOS uchun eng aqlli <br>
+        <span class="text-gradient">avtonom AI hamrohingiz</span>
+      </h1>
+
+      <p class="hero-subtitle">
+        Swan — ovozli buyruqlaringizni bir zumda tushunib, dasturlarni boshqaradigan, ekranni tahlil qiladigan va har doim sof, adabiy o'zbek tilida xizmatingizda turuvchi shaxsiy agent.
+      </p>
+
+      <div class="hero-cta-group">
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant/releases/latest/download/Swan.dmg" class="btn-primary">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" class="apple-icon">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 1.01-2.85-.9.04-2.03.62-2.67 1.37-.56.65-1.06 1.71-.93 2.73 1.01.08 2.05-.53 2.59-1.25z"/>
+          </svg>
+          <div class="btn-text-col">
+            <span class="btn-title">Swan v1.0.0 Yuklab olish</span>
+            <span class="btn-meta">Apple Silicon & Intel • .DMG (79 MB)</span>
+          </div>
+        </a>
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant" target="_blank" class="btn-secondary">
+          <span>Kodni ko'rish (GitHub)</span>
+        </a>
+      </div>
+
+      <div class="hero-badges">
+        <div class="badge-item">
+          <span class="badge-icon">✓</span>
+          <span>Apple Developer ID bilan imzolangan</span>
+        </div>
+        <div class="badge-item">
+          <span class="badge-icon">⚡</span>
+          <span>Gemini 3.1 Flash Live WebSockets</span>
+        </div>
+        <div class="badge-item">
+          <span class="badge-icon">🎙️</span>
+          <span>Aoede 24kHz Studio Audio</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Liquid HUD Interactive Preview -->
+    <section id="demo" class="preview-section">
+      <div class="preview-wrapper">
+        <div class="mac-status-mockup">
+          <div class="traffic-lights">
+            <span class="dot close"></span>
+            <span class="dot min"></span>
+            <span class="dot max"></span>
+          </div>
+          <div class="mockup-title">Swan Liquid Glass HUD Preview</div>
+        </div>
+
+        <div class="hud-capsule-display">
+          <div class="liquid-capsule">
+            <div class="capsule-logo-container">
+              <img src="swan_logo.png" alt="Swan Crystal Logo" class="capsule-swan-logo">
+            </div>
+
+            <div class="capsule-wave-area">
+              <div class="wave-canvas-mockup">
+                <span class="wave-bar bar-1"></span>
+                <span class="wave-bar bar-2"></span>
+                <span class="wave-bar bar-3"></span>
+                <span class="wave-bar bar-4"></span>
+                <span class="wave-bar bar-5"></span>
+                <span class="wave-bar bar-6"></span>
+                <span class="wave-bar bar-7"></span>
+                <span class="wave-bar bar-8"></span>
+                <span class="wave-bar bar-9"></span>
+              </div>
+            </div>
+
+            <div class="capsule-status-badge">
+              <span class="status-pulse"></span>
+              <span class="status-text" id="statusText">"Eshitaman, Janob..."</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-interactive-controls">
+          <button class="pill-ctrl active" onclick="setDemoState('listening')">🎙️ Tinglamoqda</button>
+          <button class="pill-ctrl" onclick="setDemoState('thinking')">⚡ Harakatda</button>
+          <button class="pill-ctrl" onclick="setDemoState('speaking')">🔊 Gapirmoqda</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Features Grid -->
+    <section id="features" class="features-section">
+      <div class="section-tag">IMKONIYATLAR</div>
+      <h2 class="section-heading">Tezkorlik va nozik did uyg'unligi</h2>
+      <p class="section-desc">Swan oddiy bot emas — u macOS tizimini tubdan his qiladigan avtonom kompyuter agenti.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="card-glow"></div>
+          <div class="card-icon">⚡</div>
+          <h3 class="card-title">Tezkor Harakat (Action-First)</h3>
+          <p class="card-desc">Ortiqcha so'zlarsiz buyruqni zudlik bilan bajaradi: ilovalarni ochish, brauzer tablarini almashtirish, musiqa qo'yish va fayllar yaratish.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="card-glow"></div>
+          <div class="card-icon">👁️</div>
+          <h3 class="card-title">Ekranni Ko'rish (Vision AI)</h3>
+          <p class="card-desc">"Ekranga qara" desangiz, Swan bir lahzada ekrandagi xatolar, kodlar, diagrammalar yoki dizaynlarni tahlil qilib maslahat beradi.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="card-glow"></div>
+          <div class="card-icon">🇺🇿</div>
+          <h3 class="card-title">Sof Adabiy O'zbek Tili</h3>
+          <p class="card-desc">Siz inglizcha yoki ruscha buyruq bersangiz ham, Swan uni to'liq tushunadi va har doim ravon, madaniyatli adabiy o'zbek tilida javob qaytaradi.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="card-glow"></div>
+          <div class="card-icon">🧠</div>
+          <h3 class="card-title">Aqlli Doimiy Xotira</h3>
+          <p class="card-desc">Siz haqingizdagi muhim faktlarni, ismingizni va afzalliklaringizni o'rganadi hamda keyingi barcha suhbatlarda eslab qoladi.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="card-glow"></div>
+          <div class="card-icon">🎙️</div>
+          <h3 class="card-title">Aoede Studio Voice</h3>
+          <p class="card-desc">Google Gemini-ning eng yuqori sifatli 24kHz kristaldek tiniq audio modeli. Tabiiy nafas olish, intonatsiya va real vaqtda uzilishsiz aloqa.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="card-glow"></div>
+          <div class="card-icon">🔒</div>
+          <h3 class="card-title">Mahalliy Maxfiylik</h3>
+          <p class="card-desc">Xotira, sozlamalar va shaxsiy ma'lumotlar faqat o'zingizning Mac kompyuteringizda xavfsiz saqlanadi. Uchinchi tomon serverlariga yuborilmaydi.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Voice Commands Showcase -->
+    <section id="commands" class="commands-section">
+      <div class="section-tag">OVOZLI BUYRUQLAR</div>
+      <h2 class="section-heading">Shunchaki "Hey Swan" deb ayting</h2>
+
+      <div class="commands-grid">
+        <div class="cmd-box">
+          <div class="cmd-quote">"Hey Swan, ekranga qara va bu xatoni tushuntir"</div>
+          <div class="cmd-response">↳ Ekranni skrinshot olib, terminaldagi xatoni darhol tahlil qiladi.</div>
+        </div>
+        <div class="cmd-box">
+          <div class="cmd-quote">"YouTube-dagi 2-tabga o't"</div>
+          <div class="cmd-response">↳ Safari yoki Chrome brauzeringizdagi tegishli tabni bir lahzada faollashtiradi.</div>
+        </div>
+        <div class="cmd-box">
+          <div class="cmd-quote">"Spotify-da musiqa qo'y"</div>
+          <div class="cmd-response">↳ Spotify ilovasini ishga tushirib, sevimli musiqangizni ijro etadi.</div>
+        </div>
+        <div class="cmd-box">
+          <div class="cmd-quote">"Soat necha bo'ldi?"</div>
+          <div class="cmd-response">↳ Mahalliy UTC+5 Toshkent vaqtini aniq va ravon aytib beradi.</div>
+        </div>
+        <div class="cmd-box">
+          <div class="cmd-quote">"Men dasturchiman, buni eslab qol"</div>
+          <div class="cmd-response">↳ Xotirasiga saqlab, keyingi texnik savollarda sizga moslashadi.</div>
+        </div>
+        <div class="cmd-box">
+          <div class="cmd-quote">"Dam ol" yoki "Yo'qol"</div>
+          <div class="cmd-response">↳ Darhol ekrandan silliq g'oyib bo'ladi va fon rejimiga o'tadi.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Steps -->
+    <section id="install" class="install-section">
+      <div class="section-tag">O'RNATISH</div>
+      <h2 class="section-heading">O'rnatish uchun bor-yo'g'i 3 qadam</h2>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">01</div>
+          <h3 class="step-title">Swan.dmg faylini yuklab oling</h3>
+          <p class="step-text">Yuqoridagi yuklab olish tugmasi orqali rasmiy reliz paketini oling (79 MB).</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">02</div>
+          <h3 class="step-title">Applications-ga suring</h3>
+          <p class="step-text">Yuklangan .dmg faylini oching va Swan belgisini Applications papkasiga tashlang.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">03</div>
+          <h3 class="step-title">"Hey Swan" deb boshlang</h3>
+          <p class="step-text">Ilovani oching, menyu panelida oqqush belgisi paydo bo'ladi. Buyruq berishga tayyor!</p>
+        </div>
+      </div>
+
+      <div class="download-banner">
+        <div class="banner-content">
+          <h3 class="banner-title">O'z Mac-ingizni keyingi bosqichga olib chiqing</h3>
+          <p class="banner-subtitle">Swan to'liq bepul va ochiq kodli loyihadir.</p>
+        </div>
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant/releases/latest/download/Swan.dmg" class="btn-primary banner-btn">
+          <span>Swan v1.0.0 Yuklab olish (.DMG)</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-col">
+        <div class="brand">
+          <img src="swan_logo.png" alt="Swan Logo" class="nav-logo">
+          <span class="brand-text">Swan OS</span>
+        </div>
+        <p class="footer-desc">macOS uchun yaratilgan professional sun'iy intellekt agenti.</p>
+      </div>
+      <div class="footer-col footer-links-col">
+        <h4>Havolalar</h4>
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant" target="_blank">GitHub Repository</a>
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant/releases" target="_blank">Relizlar & Tarix</a>
+        <a href="https://github.com/AxmadjonTeacher/AI-assistant/blob/main/LICENSE" target="_blank">Litsenziya (MIT)</a>
+      </div>
+      <div class="footer-col footer-author-col">
+        <h4>Muallif</h4>
+        <p>Yaratuvchi: <strong>Axmadjon Yodgorov</strong></p>
+        <p>Sertifikat: Apple Developer ID (WLT22AM64S)</p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2026 Axmadjon Yodgorov. Barcha huquqlar himoyalangan. Apple, macOS, Dynamic Island — Apple Inc. savdo belgilaridir.</p>
+    </div>
+  </footer>
+
+  <script>
+    function setDemoState(state) {
+      document.querySelectorAll('.pill-ctrl').forEach(btn => btn.classList.remove('active'));
+      const statusText = document.getElementById('statusText');
+      const waveBars = document.querySelectorAll('.wave-bar');
+      
+      if (state === 'listening') {
+        event.target.classList.add('active');
+        statusText.innerText = '"Eshitaman, Janob..."';
+        waveBars.forEach(bar => {
+          bar.style.animationDuration = '1.2s';
+          bar.style.opacity = '0.9';
+        });
+      } else if (state === 'thinking') {
+        event.target.classList.add('active');
+        statusText.innerText = '⚡ Buyruq bajarilmoqda...';
+        waveBars.forEach(bar => {
+          bar.style.animationDuration = '0.5s';
+          bar.style.opacity = '1';
+        });
+      } else if (state === 'speaking') {
+        event.target.classList.add('active');
+        statusText.innerText = '🔊 "Safari ochildi, Janob."';
+        waveBars.forEach(bar => {
+          bar.style.animationDuration = '0.8s';
+          bar.style.opacity = '1';
+        });
+      }
+    }
+  </script>
+</body>
+</html>

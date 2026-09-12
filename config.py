@@ -53,9 +53,16 @@ SWAN_CHAT_INSTRUCTION = (
     "Suhbatlaringiz teran, qiziqarli, muloyim va madaniyatli bo'lsin."
 )
 
+from resource_helper import get_resource_path, get_data_path, get_data_dir
+
+load_dotenv()
+support_env = os.path.join(get_data_dir(), ".env")
+if os.path.exists(support_env):
+    load_dotenv(support_env)
+
 import json
 
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swan_settings.json")
+SETTINGS_FILE = get_data_path("swan_settings.json")
 
 @dataclass
 class AppConfig:
@@ -84,6 +91,8 @@ class AppConfig:
             try:
                 with open(SETTINGS_FILE, "r") as f:
                     data = json.load(f)
+                    if "api_key" in data and data["api_key"]:
+                        self.api_key = str(data["api_key"]).strip()
                     if "wake_sensitivity" in data and data["wake_sensitivity"] in ["low", "medium", "high"]:
                         self.wake_sensitivity = data["wake_sensitivity"]
                     if "mode" in data and data["mode"] in ["command", "chat"]:
@@ -106,6 +115,8 @@ class AppConfig:
                 "voice_name": self.voice_name,
                 "respectful_address": self.respectful_address
             }
+            if self.api_key:
+                data["api_key"] = self.api_key
             with open(SETTINGS_FILE, "w") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
