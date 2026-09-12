@@ -47,6 +47,8 @@ def main():
         f"--add-data 'swan_crystal_clean.png:.' "
         f"--add-data 'swan_logo_crystal.png:.' "
         f"--add-data 'swan_logo_transparent.png:.' "
+        f"--collect-all 'vosk' "
+        f"--add-binary '.venv/lib/python3.13/site-packages/vosk/libvosk.dyld:vosk' "
         f"--hidden-import 'Cocoa' "
         f"--hidden-import 'PyObjCTools' "
         f"--hidden-import 'WebKit' "
@@ -65,6 +67,15 @@ def main():
     if not os.path.exists(app_path):
         print(f"[ERROR] {app_path} does not exist after PyInstaller.")
         sys.exit(1)
+
+    # Ensure libvosk.dyld is inside Contents/Frameworks/vosk
+    frameworks_vosk = os.path.join(app_path, "Contents", "Frameworks", "vosk")
+    os.makedirs(frameworks_vosk, exist_ok=True)
+    vosk_src = os.path.join(base_dir, ".venv/lib/python3.13/site-packages/vosk/libvosk.dyld")
+    vosk_dst = os.path.join(frameworks_vosk, "libvosk.dyld")
+    if os.path.exists(vosk_src):
+        shutil.copy2(vosk_src, vosk_dst)
+        run(f"codesign --force --sign '{SIGN_IDENTITY}' '{vosk_dst}'")
 
     # 3. Enhance Info.plist
     print("3. Updating Info.plist with macOS permissions...")
