@@ -170,24 +170,23 @@ class WakeWordDetector:
         if not words or words == ["[unk]"]:
             return False, "", ""
 
-        # 1. Multi-word wake phrases ("hey swan", "hi swan", "ok swan", "hello swan")
+        # 1. Multi-word wake phrases ("hey swan", "hay swan", "hi swan", "hello swan", "ok swan", "okay swan")
+        # Invocations of the assistant are unambiguous. Allow even if preceded by background music / noise tokens.
         for phrase in WAKE_PHRASES:
             if phrase in clean:
                 idx = clean.find(phrase)
-                prefix = clean[:idx].strip()
-                # If there are preceding words, reject if mid-sentence (more than 1 word or contains [unk])
-                if prefix and (len(prefix.split()) > 1 or "[unk]" in prefix):
-                    continue
                 suffix = clean[idx + len(phrase):].strip().replace("[unk]", "").strip()
                 return True, phrase, suffix
 
         # 2. Standalone single word "swan" or continuous sentence ("swan open safari")
-        if words[0] == "swan":
-            suffix = " ".join(words[1:]).replace("[unk]", "").strip()
-            return True, "swan", suffix
-        elif len(words) >= 2 and words[0] == "[unk]" and words[1] == "swan":
-            suffix = " ".join(words[2:]).replace("[unk]", "").strip()
-            return True, "swan", suffix
+        # Allowed at start, or preceded only by [unk] / noise or at most one short background distractor
+        for i, w in enumerate(words):
+            if w == "swan":
+                preceding = words[:i]
+                non_unk_preceding = [pw for pw in preceding if pw != "[unk]"]
+                if len(non_unk_preceding) <= 1:
+                    suffix = " ".join(words[i + 1:]).replace("[unk]", "").strip()
+                    return True, "swan", suffix
 
         return False, "", ""
 
@@ -219,6 +218,16 @@ class WakeWordDetector:
                             print(f"⚡ [Wake Word Instant Detected] '{partial_text}' (matched: '{token}', suffix: '{suffix}', peak_RMS: {peak_rms:.1f})", flush=True)
                             self._handle_trigger(suffix)
                             return
+                        # Rolling Lattice Reset during continuous music / noise:
+                        # If partial text accumulates 6+ words without matching wake word,
+                        # and no candidate wake token is in the last 2 words, flush the recognizer
+                        # to prevent lattice bloat and keep detection ultra-responsive (<0.1ms reset).
+                        p_words = partial_text.split()
+                        if len(p_words) >= 6:
+                            wake_candidates = {"hey", "hay", "hi", "hello", "ok", "okay", "swan"}
+                            recent_tokens = set(p_words[-2:])
+                            if not recent_tokens.intersection(wake_candidates):
+                                self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate, self.grammar)
             except Exception:
                 pass
 

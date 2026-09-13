@@ -310,10 +310,7 @@ class SwanApp:
         """Pauses playing media (Spotify or Apple Music) on macOS so user and assistant can communicate clearly."""
         script = '''
         set wasPlaying to false
-        tell application "System Events"
-            set procNames to name of every application process
-        end tell
-        if procNames contains "Spotify" then
+        if application "Spotify" is running then
             try
                 tell application "Spotify"
                     if player state is playing then
@@ -323,7 +320,7 @@ class SwanApp:
                 end tell
             end try
         end if
-        if procNames contains "Music" then
+        if application "Music" is running then
             try
                 tell application "Music"
                     if player state is playing then
@@ -349,14 +346,11 @@ class SwanApp:
         if getattr(self, "_paused_media_on_wake", False) and not getattr(self, "_media_explicitly_stopped", False):
             self._paused_media_on_wake = False
             script = '''
-            tell application "System Events"
-                set procNames to name of every application process
-            end tell
-            if procNames contains "Spotify" then
+            if application "Spotify" is running then
                 try
                     tell application "Spotify" to play
                 end try
-            else if procNames contains "Music" then
+            else if application "Music" is running then
                 try
                     tell application "Music" to play
                 end try
