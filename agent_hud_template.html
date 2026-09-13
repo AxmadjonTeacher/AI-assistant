@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swan Agent HUD</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: none !important;
+    cursor: default !important;
+  }
+
+  html, body {
+    background: transparent !important;
+    background-color: transparent !important;
+    overflow: hidden !important;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    height: 100vh;
+    width: 100vw;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+
+  .agent-capsule {
+    position: relative;
+    width: 236px;
+    height: 48px;
+    margin: 6px 10px 0 0;
+    background: linear-gradient(180deg, rgba(22, 18, 36, 0.94) 0%, rgba(12, 9, 22, 0.97) 100%);
+    border-radius: 24px;
+    border: 1px solid rgba(220, 210, 255, 0.28);
+    box-shadow: 
+      0 6px 20px rgba(0, 0, 0, 0.65), 
+      0 0 16px rgba(157, 92, 255, 0.35), 
+      inset 0 1px 1px rgba(255, 255, 255, 0.35);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    opacity: 0;
+    transform: translateX(36px) scale(0.92);
+    transition: 
+      opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1), 
+      transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+    overflow: hidden;
+  }
+
+  .agent-capsule.visible {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+
+  /* Top Specular Reflection */
+  .agent-capsule::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 15%;
+    right: 15%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(235, 225, 255, 0.75), transparent);
+    pointer-events: none;
+  }
+
+  /* Swan Icon & Glow Aura */
+  .icon-wrapper {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-right: 10px;
+  }
+
+  .glow-ring {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.6) 0%, rgba(59, 130, 246, 0.3) 60%, transparent 80%);
+    filter: blur(4px);
+    opacity: 0.8;
+    animation: pulseRing 2.2s infinite ease-in-out;
+  }
+
+  @keyframes pulseRing {
+    0% { transform: scale(0.85); opacity: 0.5; }
+    50% { transform: scale(1.25); opacity: 0.95; }
+    100% { transform: scale(0.85); opacity: 0.5; }
+  }
+
+  .swan-logo {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    position: relative;
+    z-index: 2;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  }
+
+  /* Content Text Area */
+  .text-wrapper {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+    flex: 1;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .status-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #f1edff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #a855f7;
+    box-shadow: 0 0 6px #a855f7;
+    animation: blinkDot 1.4s infinite ease-in-out;
+    flex-shrink: 0;
+  }
+
+  @keyframes blinkDot {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+
+  .status-subtitle {
+    font-size: 10px;
+    font-weight: 400;
+    color: rgba(225, 215, 255, 0.72);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+
+  /* Success State */
+  .agent-capsule.completed {
+    border-color: rgba(74, 222, 128, 0.45);
+    box-shadow: 
+      0 6px 20px rgba(0, 0, 0, 0.65), 
+      0 0 16px rgba(74, 222, 128, 0.4), 
+      inset 0 1px 1px rgba(255, 255, 255, 0.35);
+  }
+
+  .agent-capsule.completed .glow-ring {
+    background: radial-gradient(circle, rgba(74, 222, 128, 0.7) 0%, transparent 80%);
+    animation: none;
+    opacity: 0.9;
+  }
+
+  .agent-capsule.completed .status-dot {
+    background: #4ade80;
+    box-shadow: 0 0 6px #4ade80;
+    animation: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="agentCapsule" class="agent-capsule">
+  <div class="icon-wrapper">
+    <div id="glowRing" class="glow-ring"></div>
+    <img src="swan_crystal_clean.png" class="swan-logo" alt="Swan Logo">
+  </div>
+  <div class="text-wrapper">
+    <div class="title-row">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusTitle" class="status-title">Agent working...</span>
+    </div>
+    <div id="statusSubtitle" class="status-subtitle">Blender scene creation</div>
+  </div>
+</div>
+
+<script>
+  const capsule = document.getElementById('agentCapsule');
+  const statusTitle = document.getElementById('statusTitle');
+  const statusSubtitle = document.getElementById('statusSubtitle');
+  const glowRing = document.getElementById('glowRing');
+
+  function showWorking(title, subtitle) {
+    statusTitle.textContent = title || "Agent is working...";
+    statusSubtitle.textContent = subtitle || "Processing task in background";
+    capsule.classList.remove('completed');
+    capsule.classList.add('visible');
+  }
+
+  function showCompleted(title, subtitle) {
+    statusTitle.textContent = title || "Agent finished ✅";
+    statusSubtitle.textContent = subtitle || "Task completed successfully";
+    capsule.classList.add('completed');
+    capsule.classList.add('visible');
+  }
+
+  function hide() {
+    capsule.classList.remove('visible');
+  }
+</script>
+</body>
+</html>

@@ -43,6 +43,7 @@ def main():
         f"--add-data 'sounds:sounds' "
         f"--add-data 'models/vosk-model-small-en-us-0.15:models/vosk-model-small-en-us-0.15' "
         f"--add-data 'hud_template.html:.' "
+        f"--add-data 'agent_hud_template.html:.' "
         f"--add-data 'settings_template.html:.' "
         f"--add-data 'swan_crystal_clean.png:.' "
         f"--add-data 'swan_logo_crystal.png:.' "

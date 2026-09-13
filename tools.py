@@ -1952,8 +1952,42 @@ def spotify_control(action: str = "play", query: Optional[str] = None, volume_le
     else:
         return {"status": "unknown_action", "action": action}
 
+# --- BACKGROUND AGENT CONTROLLERS ---
+def create_blender_scene(prompt: str, style: str = "cinematic") -> dict:
+    """Launches an autonomous 3D director agent to build a scene in Blender."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_blender_scene(prompt=prompt, style=style)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def launch_agent(agent_type: str, task: str, details: str = "") -> dict:
+    """Launches an autonomous background agent for long-running or creative tasks."""
+    try:
+        from agent_manager import agent_manager
+        if str(agent_type).lower() in ["blender", "3d", "blender_scene"]:
+            return agent_manager.launch_blender_scene(prompt=task, style=details or "cinematic")
+        return agent_manager.launch_generic_agent(agent_type=agent_type, task_description=task, details=details)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def get_agent_status(task_id: str = "") -> dict:
+    """Gets status of active or recent background agents."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.get_status(task_id=task_id if task_id else None)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # Dispatch table
 TOOL_HANDLERS = {
+    "create_blender_scene": create_blender_scene,
+    "build_blender_scene": create_blender_scene,
+    "blender_scene": create_blender_scene,
+    "launch_agent": launch_agent,
+    "start_agent": launch_agent,
+    "get_agent_status": get_agent_status,
+    "agent_status": get_agent_status,
     "open_app": open_app,
     "close_app": close_app,
     "quit_app": close_app,
@@ -2553,6 +2587,59 @@ def get_jarvis_tools() -> list[types.Tool]:
             parameters=types.Schema(
                 type="OBJECT",
                 properties={}
+            )
+        ),
+        types.FunctionDeclaration(
+            name="create_blender_scene",
+            description="Launches an autonomous 3D director background agent to build, block, animate, or stage a scene in Blender (e.g. 'create a cyberpunk alley in Blender', 'build a floating island scene', 'make a sci-fi room with lighting'). Runs asynchronously in the background so you can immediately tell the user and continue conversing without waiting.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "prompt": types.Schema(
+                        type="STRING",
+                        description="The description of the 3D scene, objects, lighting, or animation to create in Blender."
+                    ),
+                    "style": types.Schema(
+                        type="STRING",
+                        description="Optional cinematography or aesthetic style: 'cinematic', 'photorealistic', 'anime', 'low-poly', 'neon_noir'. Defaults to 'cinematic'."
+                    )
+                },
+                required=["prompt"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="launch_agent",
+            description="Launches an autonomous background agent for long-running tasks (e.g. 'blender', 'research', 'script', 'analysis') with a floating top-right status indicator. Returns immediately so you can acknowledge and continue conversation without waiting.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "agent_type": types.Schema(
+                        type="STRING",
+                        description="The type of agent: 'blender', 'research', 'script', 'analysis'."
+                    ),
+                    "task": types.Schema(
+                        type="STRING",
+                        description="Detailed description of what the agent should accomplish."
+                    ),
+                    "details": types.Schema(
+                        type="STRING",
+                        description="Optional parameters, style, or constraints."
+                    )
+                },
+                required=["agent_type", "task"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="get_agent_status",
+            description="Checks the current status, progress, and results of background agents.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "task_id": types.Schema(
+                        type="STRING",
+                        description="Optional task ID to check specific agent status."
+                    )
+                }
             )
         )
     ]

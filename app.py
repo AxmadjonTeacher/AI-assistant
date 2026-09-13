@@ -80,6 +80,7 @@ from hotkey_manager import HotkeyManager
 from gemini_client import GeminiLiveClient
 from tools import set_mode_callback, set_dismiss_callback, set_language_callback
 from hud_window import LiquidHUDWindow
+from agent_hud import init_agent_hud
 from menu_bar import SwanMenuBar
 from settings_window import SettingsWindow
 from wake_word_detector import WakeWordDetector
@@ -108,6 +109,7 @@ class SwanApp:
             on_quit=self._quit
         )
         self.hud = LiquidHUDWindow()
+        self.agent_hud = init_agent_hud()
         self.menu_bar = SwanMenuBar(
             on_ask_swan=self.trigger_assistant,
             on_mode_toggle=self._toggle_mode,
@@ -612,6 +614,13 @@ class SwanApp:
             return "Switching Desktop..."
         elif name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
             return "Dismissing..."
+        elif name in ["create_blender_scene", "build_blender_scene", "blender_scene"]:
+            return "Launching Blender Agent..."
+        elif name in ["launch_agent", "start_agent"]:
+            agent_t = (args.get("agent_type") or "Agent").capitalize()
+            return f"Launching {agent_t} Agent..."
+        elif name in ["get_agent_status", "agent_status"]:
+            return "Checking Agent Status..."
         else:
             return f"{name.replace('_', ' ').title()}..."
 
@@ -1068,6 +1077,8 @@ class SwanApp:
             await self.client.disconnect()
         if self.hud:
             self.hud.hide(delay=0.0)
+        if hasattr(self, "agent_hud") and self.agent_hud:
+            self.agent_hud.hide()
 
 if __name__ == "__main__":
     if not acquire_single_instance_lock():
