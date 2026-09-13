@@ -14,8 +14,15 @@ from google.genai import types
 # Callback to notify app of mode changes
 mode_change_callback: Optional[Callable[[str], None]] = None
 
+# Callback to notify app of language changes
+language_change_callback: Optional[Callable[[str], None]] = None
+
 # Callback to notify app of dismissal
 dismiss_callback: Optional[Callable[[], None]] = None
+
+def set_language_callback(cb: Callable[[str], None]):
+    global language_change_callback
+    language_change_callback = cb
 
 def set_dismiss_callback(cb: Callable[[], None]):
     global dismiss_callback
@@ -930,12 +937,29 @@ def analyze_screen(query: Optional[str] = None) -> Dict[str, Any]:
         from config import config
 
         vision_client = genai.Client(api_key=config.api_key)
+        # Check if user query explicitly asked for English reading/reading aloud
+        q_low = q.lower()
+        is_english_request = any(w in q_low for w in [
+            "read this english", "read in english", "speak in english", "english text",
+            "inglizcha o'qi", "inglizcha o'qib ber", "read the text", "read this text", "read it in english"
+        ])
+
+        if is_english_request:
+            lang_rule = (
+                "1. If the user asked to read English text, extract and read the visible English text fluently and accurately in ENGLISH without translating it to Uzbek. "
+                "Output the text clearly and naturally so it can be spoken out loud in English. "
+            )
+        else:
+            lang_rule = (
+                "1. Faqat toza, go'zal va adabiy O'ZBEK TILIDA javob bering. "
+            )
+
         system_prompt = (
             "Siz Swan nomli macOS AI agentisiz. Foydalanuvchining ekran tasvirini sinchiklab tahlil qiling. "
             f"Foydalanuvchi so'rovi: '{q}'. "
             "Ekranni diqqat bilan o'rganing: asosiy faol oyna, dasturlar, veb-sahifalar, xatoliklar (error), matn yoki kodlarni aniqlang. "
             "QAT'IY TALABLAR: "
-            "1. Faqat toza, go'zal va adabiy O'ZBEK TILIDA javob bering. "
+            f"{lang_rule}"
             "2. Ovozli yordamchi ravon o'qib berishi uchun yulduzchalar (**), tire (-), qavslar yoki kod belgilarini mutlaqo ishlatmang. "
             "3. Gaplar juda ixcham, ravon va mohiyatga yo'naltirilgan bo'lsin (ko'pi bilan 2 ta aniq va chiroyli gap). "
             "4. Javobni bevosita ko'ringan narsaning mohiyatidan boshlang (masalan: 'Ekranda Safari orqali YouTube sahifasi ochiq...', 'Ekranda dasturlash kodida xatolik ko'rinmoqda...')."
@@ -1566,6 +1590,28 @@ def switch_mode(target_mode: str) -> Dict[str, Any]:
 
     return {"status": "success", "active_mode": mode}
 
+def switch_language(target_language: str) -> Dict[str, Any]:
+    """Switches the assistant primary language between 'uz' (Uzbek) and 'en' (English)."""
+    lang_clean = target_language.strip().lower()
+    if "en" in lang_clean or "ingliz" in lang_clean or "english" in lang_clean:
+        lang = "en"
+        msg = "Language switched to English"
+    elif "uz" in lang_clean or "o'zbek" in lang_clean or "ozbek" in lang_clean or "uzbek" in lang_clean:
+        lang = "uz"
+        msg = "Til o'zbek tiliga o'zgartirildi"
+    else:
+        lang = "uz"
+        msg = f"Language set to {lang}"
+
+    if language_change_callback:
+        language_change_callback(lang)
+    else:
+        from config import config
+        config.language = lang
+        config.save_persisted_settings()
+
+    return {"status": "success", "active_language": lang, "message": msg}
+
 def get_current_time() -> Dict[str, Any]:
     """Returns the user's exact current local date, time, and timezone information."""
     now = datetime.now().astimezone()
@@ -1963,6 +2009,9 @@ TOOL_HANDLERS = {
     "change_space": switch_desktop,
     "switch_workspace": switch_desktop,
     "switch_mode": switch_mode,
+    "switch_language": switch_language,
+    "set_language": switch_language,
+    "change_language": switch_language,
     "system_control": system_control,
     "get_current_time": get_current_time,
     "dismiss_assistant": dismiss_assistant,
@@ -2226,6 +2275,24 @@ def get_jarvis_tools() -> list[types.Tool]:
                     )
                 },
                 required=["target_mode"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="switch_language",
+            description=(
+                "Switches the primary conversation language of the assistant between Uzbek ('uz') and English ('en'). "
+                "Use when the user explicitly asks to switch the permanent system language (e.g. 'tilni inglizchaga o'zgartir', 'switch language to English', 'o'zbekchaga qayt'). "
+                "Note: For ad-hoc requests to read an English text or answer in English, Swan directly speaks in English without needing this tool."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "target_language": types.Schema(
+                        type="STRING",
+                        description="Target language code or name: 'en' (English) or 'uz' (Uzbek)."
+                    )
+                },
+                required=["target_language"]
             )
         ),
         types.FunctionDeclaration(

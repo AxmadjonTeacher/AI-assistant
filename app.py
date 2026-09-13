@@ -78,7 +78,7 @@ from config import config
 from audio_manager import AudioManager
 from hotkey_manager import HotkeyManager
 from gemini_client import GeminiLiveClient
-from tools import set_mode_callback, set_dismiss_callback
+from tools import set_mode_callback, set_dismiss_callback, set_language_callback
 from hud_window import LiquidHUDWindow
 from menu_bar import SwanMenuBar
 from settings_window import SettingsWindow
@@ -188,6 +188,9 @@ class SwanApp:
 
         # Mode change callback
         set_mode_callback(self._handle_mode_change)
+
+        # Language change callback
+        set_language_callback(self._handle_language_change)
 
         # Connect to Gemini Live API
         self.menu_bar.set_status("Connecting to Gemini Live...")
@@ -553,6 +556,9 @@ class SwanApp:
         elif name == "switch_mode":
             mode = args.get("target_mode", "Chat").strip().title()
             return f"Switching to {mode} Mode..."
+        elif name in ["switch_language", "set_language", "change_language"]:
+            t_lang = args.get("target_language", "English").strip().title()
+            return f"Switching Language to {t_lang}..."
         elif name == "system_control":
             act = args.get("action", "").replace("_", " ").strip().title()
             return f"Adjusting {act}..."

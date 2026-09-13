@@ -8,6 +8,8 @@
 
 # User Memory & Private State
 swan_memory.json
+swan_settings.json
+*.settings.json
 
 # Python virtualenvs & cache
 .venv/

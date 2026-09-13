@@ -17,7 +17,7 @@ DEFAULT_MEMORY: Dict[str, Any] = {
         "role": "Dasturchi / Software Engineer"
     },
     "preferences": [
-        "Javoblar har doim toza va adabiy o'zbek tilida bo'lsin.",
+        "Javoblar odatda toza va adabiy o'zbek tilida bo'lsin, ammo foydalanuvchi inglizcha gapirish yoki matn o'qishni so'rasa, ingliz tilida ravon javob berilsin.",
         "Javoblar lo'nda, tezkor va aniq harakatga yo'naltirilgan bo'lsin.",
         "Murojaat har doim hurmat bilan 'Janob' deb bo'lsin.",
         "Musiqa tinglash uchun Spotify ishlatiladi.",
@@ -27,7 +27,8 @@ DEFAULT_MEMORY: Dict[str, Any] = {
     "learned_facts": [
         "Ismi: Ahmet (Janob)",
         "Tizim: macOS",
-        "Til: O'zbek tili (mutlaq)",
+        "Til: Asosiy til O'zbek tili; foydalanuvchi so'raganida ravon ingliz tilida gapiradi va matnlarni o'qiydi",
+        "Ingliz tili: Foydalanuvchi inglizcha o'qish yoki gaplashishni so'raganda bevosita ingliz tilida so'zlashadi",
         "Ish uslubi: Aniq, tezkor buyruqlar, ish stollari va tablar boshqaruvi",
         "Oynalar orasida o'tish: Ctrl + Arrow Left yoki Right"
     ],
