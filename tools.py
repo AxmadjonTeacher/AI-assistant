@@ -966,10 +966,8 @@ def analyze_screen(query: Optional[str] = None) -> Dict[str, Any]:
         )
 
         vision_models = [
-            "gemini-3.5-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.7-flash",
             "gemini-flash-latest",
+            "gemini-3.1-flash-lite-preview",
             "gemini-flash-lite-latest",
             "gemini-3.6-flash"
         ]
@@ -1519,16 +1517,20 @@ def switch_desktop(
     if act in ["mission_control", "spaces", "overview"]:
         ascript = 'tell application "Mission Control" to launch'
         try:
-            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
-            return {"status": "success", "action": "mission_control", "message": "Mission Control ochildi"}
+            res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "action": "mission_control", "message": "Mission Control ochildi"}
+            return {"status": "error", "message": res.stderr.strip()}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     if act in ["show_desktop", "desktop_view"]:
         ascript = 'tell application "System Events" to key code 103'
         try:
-            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
-            return {"status": "success", "action": "show_desktop", "message": "Ish stoli ko'rsatildi"}
+            res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "action": "show_desktop", "message": "Ish stoli ko'rsatildi"}
+            return {"status": "error", "message": res.stderr.strip()}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -1536,8 +1538,10 @@ def switch_desktop(
     if dir_clean in ["next", "right", "forward"]:
         ascript = 'tell application "System Events" to key code 124 using control down'
         try:
-            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
-            return {"status": "success", "direction": "next", "message": "Keyingi ish stoliga o'tildi"}
+            res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "direction": "next", "message": "Keyingi ish stoliga o'tildi"}
+            return {"status": "error", "message": res.stderr.strip()}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -1545,8 +1549,10 @@ def switch_desktop(
     if dir_clean in ["previous", "prev", "left", "back"]:
         ascript = 'tell application "System Events" to key code 123 using control down'
         try:
-            subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
-            return {"status": "success", "direction": "previous", "message": "Oldingi ish stoliga o'tildi"}
+            res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "direction": "previous", "message": "Oldingi ish stoliga o'tildi"}
+            return {"status": "error", "message": res.stderr.strip()}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
@@ -1560,8 +1566,10 @@ def switch_desktop(
             }
             if idx in key_codes:
                 ascript = f'tell application "System Events" to key code {key_codes[idx]} using control down'
-                subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
-                return {"status": "success", "desktop_index": idx, "message": f"{idx}-ish stoliga o'tildi"}
+                res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+                if res.returncode == 0:
+                    return {"status": "success", "desktop_index": idx, "message": f"{idx}-ish stoliga o'tildi"}
+                return {"status": "error", "message": res.stderr.strip()}
             else:
                 return {"status": "error", "message": f"Ish stoli raqami {idx} noto'g'ri (1 dan 9 gacha qo'llab-quvvatlanadi)"}
         except Exception as e:
@@ -1570,8 +1578,10 @@ def switch_desktop(
     # Default fallback: Next desktop
     ascript = 'tell application "System Events" to key code 124 using control down'
     try:
-        subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
-        return {"status": "success", "direction": "next", "message": "Keyingi ish stoliga o'tildi"}
+        res = subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+        if res.returncode == 0:
+            return {"status": "success", "direction": "next", "message": "Keyingi ish stoliga o'tildi"}
+        return {"status": "error", "message": res.stderr.strip()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -2529,7 +2539,7 @@ def get_jarvis_tools() -> list[types.Tool]:
         ),
         types.FunctionDeclaration(
             name="applescript_exec",
-            description="Executes AppleScript on macOS to automate UI interactions, Safari tabs, Finder windows, or System Settings.",
+            description="Executes custom AppleScript on macOS for specialized UI automation. Note: NEVER use this for switching desktops, spaces, browser tabs, or windows — use dedicated tools (switch_desktop, switch_tab, switch_window) instead.",
             parameters=types.Schema(
                 type="OBJECT",
                 properties={

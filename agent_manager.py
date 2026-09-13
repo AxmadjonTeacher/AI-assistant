@@ -393,7 +393,7 @@ class AgentManager:
         return res
 
     @staticmethod
-    def _generate_with_fallback(client, contents, config, models=("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.1-pro-preview")):
+    def _generate_with_fallback(client, contents, config, models=("gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.6-flash")):
         last_err = None
         from google.genai import types
         if config and not getattr(config, "http_options", None):
@@ -874,9 +874,9 @@ class AgentManager:
                             model="gemini-flash-latest",
                             contents=(
                                 "You are an award-winning master digital visual artist.\n"
-                                f"Convert this image request into an ultra-detailed, photorealistic, cinematic visual description under 150 characters: '{task.prompt}'.\n"
-                                "Include: 8k, volumetric lighting, photorealistic, masterpiece.\n"
-                                "Output ONLY the prompt string in English, no quotes, under 150 characters."
+                                f"Convert this image request into an ultra-detailed, photorealistic, cinematic visual description: '{task.prompt}'.\n"
+                                "Specify: subject details, materials, studio lighting, octane render, photorealistic, 8k resolution, cinematic composition.\n"
+                                "Output ONLY the prompt string in English, no quotes, concise within 250 characters."
                             )
                         )
                         if enh_resp.text:
@@ -889,29 +889,29 @@ class AgentManager:
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
 
-                clean_prompt = final_prompt[:180].strip()
+                clean_prompt = final_prompt[:250].strip()
                 enc_p = urllib.parse.quote(clean_prompt)
                 seed = random.randint(1000, 999999)
-                url = f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&nologo=true&seed={seed}"
+                url = f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&enhance=true&nologo=true&seed={seed}"
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
                 try:
-                    with urllib.request.urlopen(req, timeout=35, context=ctx) as resp:
+                    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
                         raw_bytes = resp.read()
                 except Exception as net_err:
                     print(f"⚠️ [Image Agent] Initial request notice: {net_err}. Retrying with direct prompt...", flush=True)
-                    direct_p = urllib.parse.quote(task.prompt[:120].strip())
+                    direct_p = urllib.parse.quote(task.prompt[:180].strip())
                     alt_url = f"https://image.pollinations.ai/prompt/{direct_p}?width={width}&height={height}&nologo=true&seed={random.randint(1, 9999)}"
                     req2 = urllib.request.Request(alt_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
-                    with urllib.request.urlopen(req2, timeout=35, context=ctx) as resp2:
+                    with urllib.request.urlopen(req2, timeout=30, context=ctx) as resp2:
                         raw_bytes = resp2.read()
 
                 if len(raw_bytes) > 1000:
-                    # Load image, crop bottom 42px to eliminate watermark logo completely, and resize back cleanly
+                    # Load image, crop bottom 48px to eliminate watermark logo completely, and resize back cleanly
                     from PIL import Image
                     import io
                     raw_img = Image.open(io.BytesIO(raw_bytes))
                     w, h = raw_img.size
-                    clean_img = raw_img.crop((0, 0, w, max(10, h - 42)))
+                    clean_img = raw_img.crop((0, 0, w, max(10, h - 48)))
                     clean_img = clean_img.resize((width, height), Image.Resampling.LANCZOS)
                     clean_img.save(dest_path, "PNG", quality=95)
                     success = True

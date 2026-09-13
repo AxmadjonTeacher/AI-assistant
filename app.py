@@ -7,6 +7,39 @@ import fcntl
 import threading
 from typing import Optional
 
+# Persistent file logging for Swan.app
+LOG_DIR = os.path.expanduser("~/Library/Logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+SWAN_LOG_FILE = os.path.join(LOG_DIR, "Swan.log")
+
+class TeeStream:
+    def __init__(self, original_stream, file_path):
+        self.orig = original_stream
+        self.file_path = file_path
+
+    def write(self, data):
+        if self.orig:
+            try:
+                self.orig.write(data)
+            except Exception:
+                pass
+        try:
+            with open(self.file_path, "a", encoding="utf-8") as f:
+                f.write(data)
+        except Exception:
+            pass
+
+    def flush(self):
+        if self.orig:
+            try:
+                self.orig.flush()
+            except Exception:
+                pass
+
+if not isinstance(sys.stdout, TeeStream):
+    sys.stdout = TeeStream(sys.stdout, SWAN_LOG_FILE)
+    sys.stderr = TeeStream(sys.stderr, SWAN_LOG_FILE)
+
 LOCK_FILE = "/tmp/swan_assistant.lock"
 _lock_fd = None
 

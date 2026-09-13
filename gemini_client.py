@@ -220,10 +220,14 @@ class GeminiLiveClient:
             await asyncio.wait_for(_receive_loop(), timeout=50.0)
 
         except asyncio.CancelledError:
-            print("🛑 [Gemini Client] Turn cancelled by caller. Disconnecting session cleanly for next call...", flush=True)
-            self._needs_reconnect = True
+            print("🛑 [Gemini Client] Turn cancelled by caller. Recycling session in background...", flush=True)
             self._connected = False
             await self._disconnect_unlocked()
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.connect())
+            except Exception:
+                pass
             raise
 
         except (asyncio.TimeoutError, Exception) as e:
