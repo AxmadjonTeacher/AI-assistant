@@ -151,6 +151,16 @@ class AgentManager:
 
         return False
 
+    @staticmethod
+    def _clean_code(raw_text: str) -> str:
+        if "```python" in raw_text:
+            return raw_text.split("```python")[1].split("```")[0].strip()
+        elif "```py" in raw_text:
+            return raw_text.split("```py")[1].split("```")[0].strip()
+        elif "```" in raw_text:
+            return raw_text.split("```")[1].split("```")[0].strip()
+        return raw_text.strip()
+
     def _execute_in_blender_socket(self, code_str: str, timeout: float = 60.0) -> Dict[str, Any]:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(timeout)
@@ -167,6 +177,9 @@ class AgentManager:
             "        for area in win.screen.areas:\n"
             "            if area.type == 'VIEW_3D':\n"
             "                area.tag_redraw()\n"
+            "# Ensure result variable is always a valid dict for Blender MCP bridge\n"
+            "if not isinstance(locals().get('result'), dict):\n"
+            "    result = {'status': 'completed', 'objects_count': len(bpy.data.objects)}\n"
         )
 
         payload = json.dumps({
@@ -187,8 +200,27 @@ class AgentManager:
                 break
         s.close()
 
-        raw_response = data.decode("utf-8").rstrip("\0")
-        return json.loads(raw_response)
+        raw_response = data.decode("utf-8").rstrip("\0").strip()
+        res = json.loads(raw_response)
+        if isinstance(res, dict) and res.get("status") == "error":
+            err_msg = res.get("message") or "Blender execution error"
+            raise RuntimeError(err_msg)
+        return res
+
+    @staticmethod
+    def _generate_with_fallback(client, contents, config, models=("gemini-flash-latest", "gemini-3.5-flash", "gemini-3.6-flash")):
+        last_err = None
+        for m in models:
+            try:
+                return client.models.generate_content(model=m, contents=contents, config=config)
+            except Exception as e:
+                last_err = e
+                err_str = str(e)
+                if any(kw in err_str for kw in ("429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND", "503")):
+                    print(f"⚠️ [AgentManager] Model '{m}' error ({err_str[:60]}...). Falling back to next model...", flush=True)
+                    continue
+                raise e
+        raise last_err
 
     def _run_blender_worker(self, task: AgentTask, style: str):
         print(f"🎨 [Blender Agent] Generating 3D scene for prompt: '{task.prompt}'", flush=True)
@@ -198,16 +230,40 @@ class AgentManager:
             client = genai.Client(api_key=config.api_key)
 
             system_instruction = (
-                "You are an elite Hollywood 3D Director and master Blender Python developer. "
+                "You are an elite Hollywood 3D Director and master Blender Python developer for Blender 5.2.\n"
                 "The user will give you a scene or 3D concept prompt. "
-                "Generate COMPLETE, FLAWLESS, ROBUST Python code executable in Blender (bpy). "
-                "RULES:\n"
-                "1. Clean slate: remove existing default meshes if starting new, or construct on existing scene cleanly.\n"
-                "2. Create rich geometry, evocative materials (Principled BSDF with metallic, roughness, emission colors), and dramatic lighting (key lights, rim lights, area lights with vibrant colors).\n"
-                "3. Set up a Camera with cinematic framing, depth, or animated camera orbit/travel.\n"
-                "4. Standardize fps: bpy.context.scene.render.fps = 24. Set frame_start=1 and frame_end=120.\n"
-                "5. Ensure all transforms, constraints, and collections are cleanly created.\n"
-                "6. Output ONLY raw executable Python code inside ```python ``` markdown block. No conversational filler."
+                "Generate COMPLETE, FLAWLESS, ROBUST Python code executable in Blender (bpy).\n\n"
+                "CRITICAL BLENDER 5.2 RULES (VIOLATIONS WILL CRASH THE ENGINE):\n"
+                "1. NEVER use `bpy.ops.wm.read_factory_settings`, `bpy.ops.wm.read_homefile`, `bpy.ops.wm.quit_blender`, or `sys.exit`. The Blender security sandbox explicitly blocks these and aborts execution.\n"
+                "2. To clear the scene, ALWAYS use this exact loop:\n"
+                "   for obj in list(bpy.data.objects):\n"
+                "       bpy.data.objects.remove(obj, do_unlink=True)\n"
+                "   for mat in list(bpy.data.materials):\n"
+                "       bpy.data.materials.remove(mat, do_unlink=True)\n"
+                "3. Mesh Primitive Operators (exact names & parameters):\n"
+                "   - bpy.ops.mesh.primitive_cube_add(size=..., location=...)\n"
+                "   - bpy.ops.mesh.primitive_cylinder_add(radius=..., depth=..., vertices=..., location=...)\n"
+                "   - bpy.ops.mesh.primitive_plane_add(size=..., location=...)\n"
+                "   - bpy.ops.mesh.primitive_uv_sphere_add(radius=..., segments=..., ring_count=..., location=...)\n"
+                "   - bpy.ops.mesh.primitive_ico_sphere_add(radius=..., subdivisions=..., location=...) (NOTE: 'ico_sphere' has an underscore, NOT icosphere)\n"
+                "   - bpy.ops.mesh.primitive_torus_add(major_radius=..., minor_radius=..., location=...)\n"
+                "   - bpy.ops.mesh.primitive_cone_add(radius1=..., depth=..., location=...)\n"
+                "4. In Blender 5.x / 4.x, Principled BSDF input sockets are:\n"
+                "   - 'Base Color'\n"
+                "   - 'Metallic'\n"
+                "   - 'Roughness'\n"
+                "   - 'Emission Color'\n"
+                "   - 'Emission Strength'\n"
+                "   - 'Specular IOR Level' (DO NOT use 'Specular')\n"
+                "   Always check socket existence safely: if 'Metallic' in bsdf.inputs: bsdf.inputs['Metallic'].default_value = ...\n"
+                "5. Render Engine: Leave default engine ('BLENDER_EEVEE') as is. Do NOT call list_render_engines or set invalid engine enums.\n"
+                "6. Geometry & Composition: Create rich, recognizable 3D structures with multiple meshes, smooth shading, evocative colors, and bevels/subdivisions where appropriate.\n"
+                "7. Lighting: Create 2-3 lights (key, fill, rim lights with distinct tints and energy 500-2000). For Area lights, use light.size (not size_x).\n"
+                "8. Object Linking: If creating objects with bpy.data.objects.new(...), always link them to the active scene: bpy.context.collection.objects.link(obj).\n"
+                "9. Camera: Add a camera positioned with a dramatic angle looking at the center: bpy.context.scene.camera = cam\n"
+                "10. Animation: If animating, use obj.keyframe_insert(data_path='location', frame=...) or obj.keyframe_insert(data_path='rotation_euler', frame=...). Never manipulate action.fcurves directly.\n"
+                "11. Master Timeline: bpy.context.scene.render.fps = 24; bpy.context.scene.frame_start = 1; bpy.context.scene.frame_end = 120.\n"
+                "12. Output ONLY raw executable Python code inside a ```python ``` markdown codeblock. No commentary."
             )
 
             user_msg = f"Build this 3D scene in Blender with {style} cinematography:\nPrompt: {task.prompt}"
@@ -217,30 +273,62 @@ class AgentManager:
                 temperature=0.4
             )
 
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=user_msg,
-                config=cfg
-            )
-
-            raw_text = response.text or ""
-            # Extract python code
-            code = raw_text
-            if "```python" in raw_text:
-                code = raw_text.split("```python")[1].split("```")[0].strip()
-            elif "```" in raw_text:
-                code = raw_text.split("```")[1].split("```")[0].strip()
+            response = self._generate_with_fallback(client, user_msg, cfg)
+            code = self._clean_code(response.text or "")
 
             if not self._ensure_blender_running():
                 raise RuntimeError("Could not connect to Blender on 127.0.0.1:9876. Please ensure Blender is running.")
 
-            # Send code to Blender
-            exec_res = self._execute_in_blender_socket(code)
-            print(f"🎨 [Blender Agent] Code executed in Blender: {exec_res}", flush=True)
+            # Send code to Blender with self-healing retry (up to 2 repair attempts)
+            current_code = code
+            last_err = None
+            for attempt in range(3):
+                try:
+                    exec_res = self._execute_in_blender_socket(current_code)
+                    print(f"🎨 [Blender Agent] Code executed successfully (attempt {attempt+1}): {exec_res}", flush=True)
+                    last_err = None
+                    break
+                except RuntimeError as exec_err:
+                    last_err = exec_err
+                    print(f"⚠️ [Blender Agent] Attempt {attempt+1} failed: {exec_err}", flush=True)
+                    if attempt < 2:
+                        _update_hud_working("Agent repairing...", f"Self-healing syntax (try {attempt+1})...")
+                        repair_prompt = (
+                            f"The following Blender Python script failed with this runtime error in Blender 5.2:\n"
+                            f"ERROR: {exec_err}\n\n"
+                            f"FAILED CODE:\n{current_code}\n\n"
+                            f"Please fix the error and output ONLY the corrected complete executable Python code inside a ```python ``` markdown block.\n"
+                            f"IMPORTANT RULES FOR BLENDER 5.2:\n"
+                            f"- DO NOT use bpy.ops.wm.read_factory_settings or bpy.ops.wm.read_homefile.\n"
+                            f"- Clean objects with: for obj in list(bpy.data.objects): bpy.data.objects.remove(obj, do_unlink=True)\n"
+                            f"- Primitive operators: primitive_cube_add, primitive_cylinder_add, primitive_plane_add, primitive_uv_sphere_add, primitive_ico_sphere_add (with underscore), primitive_torus_add, primitive_cone_add.\n"
+                            f"- For Principled BSDF: 'Base Color', 'Metallic', 'Roughness', 'Emission Color', 'Emission Strength', 'Specular IOR Level'.\n"
+                            f"- Do NOT change render engine or manipulate action.fcurves directly.\n"
+                        )
+                        repair_resp = self._generate_with_fallback(client, repair_prompt, cfg)
+                        current_code = self._clean_code(repair_resp.text or "")
+                    else:
+                        raise last_err
+
+            if last_err:
+                raise last_err
+
+            # Verification: Ensure objects were actually created
+            verify_res = self._execute_in_blender_socket("result = {'count': len(bpy.data.objects), 'names': [o.name for o in bpy.data.objects]}")
+            obj_info = verify_res.get("result", {})
+            obj_count = obj_info.get("count", 0)
+            if obj_count == 0:
+                raise RuntimeError("Blender execution finished, but 0 3D objects were created.")
+
+            # Bring Blender to focus
+            try:
+                subprocess.run(["osascript", "-e", 'tell application "Blender" to activate'], capture_output=True)
+            except Exception:
+                pass
 
             task.status = "completed"
             task.finished_at = time.time()
-            task.result_message = "3D scene created successfully in Blender!"
+            task.result_message = f"3D scene created successfully with {obj_count} objects: {', '.join(obj_info.get('names', [])[:4])}"
 
             # Update HUD to completed
             _update_hud_completed("Agent finished ✅", f"Blender: {task.prompt[:25]}", auto_hide_seconds=4.0)
@@ -262,11 +350,7 @@ class AgentManager:
 
             prompt = f"Perform this autonomous task thoroughly:\nTask: {task.prompt}\nDetails: {details}"
             cfg = types.GenerateContentConfig(temperature=0.3)
-            response = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=prompt,
-                config=cfg
-            )
+            response = self._generate_with_fallback(client, prompt, cfg)
 
             task.status = "completed"
             task.finished_at = time.time()
