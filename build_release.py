@@ -48,6 +48,7 @@ def main():
         f"--add-data 'swan_crystal_clean.png:.' "
         f"--add-data 'swan_logo_crystal.png:.' "
         f"--add-data 'swan_logo_transparent.png:.' "
+        f"--add-data 'cinematic_camera_rig.py:.' "
         f"--collect-all 'vosk' "
         f"--add-binary '.venv/lib/python3.13/site-packages/vosk/libvosk.dyld:vosk' "
         f"--hidden-import 'Cocoa' "

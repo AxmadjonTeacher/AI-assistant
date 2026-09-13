@@ -1953,11 +1953,61 @@ def spotify_control(action: str = "play", query: Optional[str] = None, volume_le
         return {"status": "unknown_action", "action": action}
 
 # --- BACKGROUND AGENT CONTROLLERS ---
-def create_blender_scene(prompt: str, style: str = "cinematic") -> dict:
-    """Launches an autonomous 3D director agent to build a scene in Blender."""
+def create_blender_scene(prompt: str, style: str = "cinematic", reference_image: str = "") -> dict:
+    """Launches an autonomous 3D director agent to build a scene in Blender,
+    or reconstructs a 2D reference logo/image into a high-fidelity 3D model.
+    """
     try:
         from agent_manager import agent_manager
-        return agent_manager.launch_blender_scene(prompt=prompt, style=style)
+        return agent_manager.launch_blender_scene(prompt=prompt, style=style, reference_image=reference_image if reference_image else None)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def generate_image(prompt: str, aspect_ratio: str = "1:1") -> dict:
+    """Generates an image from a prompt (nano banana / Gemini image models) and ALWAYS saves it directly onto ~/Desktop and opens it."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_image_agent(prompt=prompt, aspect_ratio=aspect_ratio)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def edit_image(source_image: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
+    """Takes an existing image from any folder or path, modifies/edits it according to the instruction, and ALWAYS saves it to ~/Desktop and opens it."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_image_agent(prompt=prompt, source_image_path=source_image, aspect_ratio=aspect_ratio)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def read_notes(query: str = "") -> dict:
+    """Reads a note from Apple Notes. If query is provided, searches by title/content; otherwise reads the latest note."""
+    try:
+        clean_q = query.strip().replace('"', '\\"') if query else ""
+        if clean_q:
+            scpt = f'''
+            tell application "Notes"
+                repeat with n in (notes of folder "Notes" of default account)
+                    if (name of n contains "{clean_q}") or (body of n contains "{clean_q}") then
+                        return (name of n) & "\n---\n" & (plaintext of n)
+                    end if
+                end repeat
+                return (name of note 1 of folder "Notes" of default account) & "\n---\n" & (plaintext of note 1 of folder "Notes" of default account)
+            end tell
+            '''
+        else:
+            scpt = '''
+            tell application "Notes"
+                return (name of note 1 of folder "Notes" of default account) & "\n---\n" & (plaintext of note 1 of folder "Notes" of default account)
+            end tell
+            '''
+        res = subprocess.run(["osascript", "-e", scpt], capture_output=True, text=True, timeout=8.0)
+        if res.returncode == 0:
+            raw = res.stdout.strip()
+            parts = raw.split("\n---\n", 1)
+            title = parts[0].strip() if len(parts) > 0 else ""
+            content = parts[1].strip() if len(parts) > 1 else raw
+            return {"status": "success", "title": title, "content": content}
+        return {"status": "error", "message": res.stderr.strip()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1965,8 +2015,18 @@ def launch_agent(agent_type: str, task: str, details: str = "") -> dict:
     """Launches an autonomous background agent for long-running or creative tasks."""
     try:
         from agent_manager import agent_manager
-        if str(agent_type).lower() in ["blender", "3d", "blender_scene"]:
-            return agent_manager.launch_blender_scene(prompt=task, style=details or "cinematic")
+        atype = str(agent_type).lower()
+        if atype in ["blender", "3d", "blender_scene", "model_3d", "logo_3d", "3d_logo"]:
+            ref_img = None
+            style = "cinematic"
+            if details:
+                if any(ext in details.lower() for ext in (".png", ".jpg", ".jpeg", ".webp", ".svg")) or details.lower() in ("screen", "screenshot"):
+                    ref_img = details
+                else:
+                    style = details
+            return agent_manager.launch_blender_scene(prompt=task, style=style, reference_image=ref_img)
+        elif atype in ["image", "picture", "generate_image", "edit_image", "draw", "visual"]:
+            return agent_manager.launch_image_agent(prompt=task, source_image_path=details if details else None)
         return agent_manager.launch_generic_agent(agent_type=agent_type, task_description=task, details=details)
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1981,9 +2041,25 @@ def get_agent_status(task_id: str = "") -> dict:
 
 # Dispatch table
 TOOL_HANDLERS = {
+    "generate_image": generate_image,
+    "create_image": generate_image,
+    "draw_image": generate_image,
+    "draw_picture": generate_image,
+    "make_picture": generate_image,
+    "edit_image": edit_image,
+    "modify_image": edit_image,
+    "change_image": edit_image,
+    "read_notes": read_notes,
+    "get_note": read_notes,
+    "read_note": read_notes,
+    "get_notes": read_notes,
     "create_blender_scene": create_blender_scene,
     "build_blender_scene": create_blender_scene,
     "blender_scene": create_blender_scene,
+    "create_3d_logo": create_blender_scene,
+    "create_3d_model": create_blender_scene,
+    "model_3d": create_blender_scene,
+    "reconstruct_3d": create_blender_scene,
     "launch_agent": launch_agent,
     "start_agent": launch_agent,
     "get_agent_status": get_agent_status,
@@ -2590,14 +2666,71 @@ def get_jarvis_tools() -> list[types.Tool]:
             )
         ),
         types.FunctionDeclaration(
-            name="create_blender_scene",
-            description="Launches an autonomous 3D director background agent to build, modify, animate, or stage a scene in Blender (e.g. 'build a cyberpunk scene in Blender', 'change the camera movement', 'animate camera orbit around the object', 'adjust lighting'). Runs asynchronously in the background so you can immediately acknowledge and continue conversation without waiting.",
+            name="generate_image",
+            description="Generates an image from a prompt (using nano banana / Gemini image models) and ALWAYS saves it directly onto the user's Desktop (~/Desktop) and opens it. Use when user asks to create/generate an image, draw a picture, or create an image from notes or screen.",
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
                     "prompt": types.Schema(
                         type="STRING",
-                        description="The description of the 3D scene, objects, lighting, or camera movement/animation to create or modify in Blender."
+                        description="Detailed descriptive prompt for generating the image."
+                    ),
+                    "aspect_ratio": types.Schema(
+                        type="STRING",
+                        description="Optional aspect ratio: '1:1', '16:9', '9:16', '4:3', '3:4'. Defaults to '1:1'."
+                    )
+                },
+                required=["prompt"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="edit_image",
+            description="Takes an existing image from any folder or path (e.g. 'Downloads', 'Desktop', or specific path), edits or adds elements to it according to the instructions, and ALWAYS saves the modified picture directly onto the user's Desktop (~/Desktop) and opens it.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "source_image": types.Schema(
+                        type="STRING",
+                        description="The path or folder name (e.g. 'Downloads', 'Desktop', or full file path) containing the image to edit."
+                    ),
+                    "prompt": types.Schema(
+                        type="STRING",
+                        description="The editing instructions (e.g. 'add sunglasses and a hat', 'change background to sunset')."
+                    ),
+                    "aspect_ratio": types.Schema(
+                        type="STRING",
+                        description="Optional aspect ratio: '1:1', '16:9', '9:16', '4:3', '3:4'. Defaults to '1:1'."
+                    )
+                },
+                required=["source_image", "prompt"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="read_notes",
+            description="Reads the text or prompt from Apple Notes. If query is given, searches by keyword or note title; if omitted, reads the most recent / active note. Use when the user says 'look at the prompt on my notes and create a picture' or wants to read notes.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "query": types.Schema(
+                        type="STRING",
+                        description="Optional search keyword or note title to find in Notes."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="create_blender_scene",
+            description="Launches an autonomous 3D director background agent to build, modify, animate, stage a scene, or reconstruct a 2D reference logo/image into a high-fidelity 3D model in Blender (e.g. 'build a cyberpunk scene in Blender', 'look at reference logo.png on my desktop and create a 3D version of it in blender', 'change the camera movement', 'animate camera orbit'). Runs asynchronously in the background so you can immediately acknowledge and continue conversation without waiting.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "prompt": types.Schema(
+                        type="STRING",
+                        description="The description of the 3D scene, objects, lighting, camera choreography, or instructions for 3D logo reconstruction."
+                    ),
+                    "reference_image": types.Schema(
+                        type="STRING",
+                        description="Optional path, filename, or location of a 2D reference logo or image to reconstruct in 3D in Blender (e.g. 'reference logo.png', '~/Desktop/logo.png', or 'screen')."
                     ),
                     "style": types.Schema(
                         type="STRING",
@@ -2609,13 +2742,13 @@ def get_jarvis_tools() -> list[types.Tool]:
         ),
         types.FunctionDeclaration(
             name="launch_agent",
-            description="Launches an autonomous background agent for long-running tasks (e.g. 'blender', 'research', 'script', 'analysis') with a floating top-right status indicator. Returns immediately so you can acknowledge and continue conversation without waiting.",
+            description="Launches an autonomous background agent for long-running tasks (e.g. 'image', 'blender', 'research', 'script', 'analysis') with a floating top-right status indicator. Returns immediately so you can acknowledge and continue conversation without waiting.",
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
                     "agent_type": types.Schema(
                         type="STRING",
-                        description="The type of agent: 'blender', 'research', 'script', 'analysis'."
+                        description="The type of agent: 'image', 'blender', 'research', 'script', 'analysis'."
                     ),
                     "task": types.Schema(
                         type="STRING",
@@ -2623,7 +2756,7 @@ def get_jarvis_tools() -> list[types.Tool]:
                     ),
                     "details": types.Schema(
                         type="STRING",
-                        description="Optional parameters, style, or constraints."
+                        description="Optional parameters, style, source image path, or constraints."
                     )
                 },
                 required=["agent_type", "task"]
