@@ -141,9 +141,9 @@ class SwanMenuBar:
         self.status_menu_item.setEnabled_(False)
         self.menu.addItem_(self.status_menu_item)
 
-        # Item 1.5: Ask Swan
+        # Item 1.5: Ask Swan (Show Liquid Pill)
         self.ask_menu_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "🎙️ Ask Swan", objc.selector(self.target.askSwan_, signature=b"v@:@"), ""
+            "🎙️ Ask Swan (Show Liquid Pill)", objc.selector(self.target.askSwan_, signature=b"v@:@"), ""
         )
         self.ask_menu_item.setTarget_(self.target)
         self.menu.addItem_(self.ask_menu_item)
