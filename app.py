@@ -122,9 +122,9 @@ class SwanApp:
             on_quit=self._quit
         )
 
-        # Greet on launch so user visually sees the liquid pill immediately
+        # Greet on launch and remain permanently visible in ready state
         AppHelper.callLater(0.5, lambda: self.hud.show(state="wake", status="SWAN", subtitle="Tayyorman, Janob"))
-        AppHelper.callLater(2.8, lambda: self.hud.hide())
+        AppHelper.callLater(3.0, lambda: self.hud.set_state("idle", "SWAN", "Ready"))
 
         # 3. Audio & AI Core
         self.audio_manager = AudioManager()
@@ -250,9 +250,9 @@ class SwanApp:
         self._handle_mode_change(new_mode)
 
     def _is_active(self) -> bool:
-        """Returns True if Swan is currently active, listening, speaking, or visible."""
-        hud_vis = getattr(self.hud, "_is_visible", False)
-        return self._busy or self.audio_manager.is_recording() or self.audio_manager.is_playing() or hud_vis
+        """Returns True if Swan is actively engaged in a conversation, recording, or speaking."""
+        hud_active = getattr(self.hud, "current_state", "idle") not in ("idle", "ready")
+        return self._busy or self.audio_manager.is_recording() or self.audio_manager.is_playing() or hud_active
 
     def _on_speech_interrupted(self, reason: str = "", is_dismiss: bool = False):
         """Called immediately when user speaks an interruption or dismiss keyword during assistant playback."""
@@ -1076,7 +1076,7 @@ class SwanApp:
         if self.client:
             await self.client.disconnect()
         if self.hud:
-            self.hud.hide(delay=0.0)
+            self.hud.order_out()
         if hasattr(self, "agent_hud") and self.agent_hud:
             self.agent_hud.hide()
 

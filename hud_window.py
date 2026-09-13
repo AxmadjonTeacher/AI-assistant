@@ -24,11 +24,16 @@ class HUDNavDelegate(NSObject):
         if self is None:
             return None
         self.on_loaded = None
+        self.on_screen_changed = None
         return self
 
     def webView_didFinishNavigation_(self, webview, navigation):
         if hasattr(self, "on_loaded") and self.on_loaded:
             self.on_loaded()
+
+    def screenDidChange_(self, notification):
+        if hasattr(self, "on_screen_changed") and self.on_screen_changed:
+            self.on_screen_changed()
 
 class LiquidHUDWindow:
     def __init__(self, template_path: Optional[str] = None):
@@ -40,7 +45,8 @@ class LiquidHUDWindow:
         self.panel = None
         self.webview = None
         self.nav_delegate = None
-        self._is_visible = False
+        self._is_visible = True
+        self.current_state = "idle"
         self._hide_timer = None
         self._lock = threading.Lock()
 
@@ -50,6 +56,25 @@ class LiquidHUDWindow:
 
         # Initialize window on main Cocoa thread
         self._init_window()
+
+        # Register for display resolution/monitor changes
+        from Cocoa import NSNotificationCenter, NSApplicationDidChangeScreenParametersNotification
+        self.nav_delegate.on_screen_changed = self._on_screen_changed
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self.nav_delegate,
+            objc.selector(self.nav_delegate.screenDidChange_, signature=b"v@:@"),
+            NSApplicationDidChangeScreenParametersNotification,
+            None
+        )
+
+    def _on_screen_changed(self):
+        AppHelper.callAfter(self._main_update_screen)
+
+    def _main_update_screen(self):
+        self._update_frame_for_current_screen()
+        if self.panel:
+            self.panel.setFrame_display_(self._on_screen_frame, True)
+            self.panel.orderFrontRegardless()
 
     def _update_frame_for_current_screen(self):
         mouse_loc = NSEvent.mouseLocation()
@@ -122,10 +147,13 @@ class LiquidHUDWindow:
             print(f"[ERROR] Loading HUD template string from {resolved_path}: {e}")
 
         self.panel.setContentView_(self.webview)
-        self.panel.orderOut_(None)
+        # Always visible: order front immediately
+        self.panel.orderFrontRegardless()
 
     def _on_page_loaded(self):
         self._page_loaded = True
+        self.panel.orderFrontRegardless()
+        self._eval_js('window.showHUD("idle", "SWAN", "Ready");')
         for code in self._pending_evals:
             if self.webview:
                 self.webview.evaluateJavaScript_completionHandler_(code, None)
@@ -142,11 +170,13 @@ class LiquidHUDWindow:
 
     def show(self, state: str = "wake", status: str = "SWAN", subtitle: str = "Listening"):
         self._show_token += 1
+        self.current_state = state or "wake"
         AppHelper.callAfter(self._main_show, self._show_token, state, status, subtitle)
 
     def _main_show(self, token: int, state: str, status: str, subtitle: str):
         with self._lock:
             self._is_visible = True
+            self.current_state = state or "wake"
 
         try:
             # Dynamically place on current focused screen and show on top of all windows
@@ -161,38 +191,47 @@ class LiquidHUDWindow:
             pass
 
     def hide(self, delay: float = 0.0):
+        # Liquid pill is ALWAYS visible: when hide() is requested, smoothly return to resting idle state.
+        self._show_token += 1
         token = self._show_token
         if delay <= 0:
-            AppHelper.callAfter(self._main_do_hide, token)
+            AppHelper.callAfter(self._main_do_idle, token)
         else:
-            AppHelper.callLater(delay, self._main_do_hide, token)
+            AppHelper.callLater(delay, self._main_do_idle, token)
 
-    def _main_do_hide(self, token: int):
+    def _main_do_idle(self, token: int):
         with self._lock:
             if token != self._show_token:
-                # Stale hide request from an earlier cycle; ignore!
+                # Stale request from an earlier cycle; ignore!
                 return
-            self._is_visible = False
-        self._eval_js("window.hideHUD();")
-        # Give CSS transition time to complete before ordering out
-        AppHelper.callLater(0.35, self._order_out, token)
+            self.current_state = "idle"
+            self._is_visible = True
+        try:
+            self.panel.orderFrontRegardless()
+            self._eval_js('window.setState("idle", "SWAN", "Ready");')
+        except Exception:
+            pass
 
-    def _order_out(self, token: int):
+    def order_out(self):
+        """Only called on app termination to dismiss window."""
         with self._lock:
-            if token != self._show_token or self._is_visible:
-                # Re-shown; do not order out!
-                return
-            if self.panel:
-                self.panel.orderOut_(None)
+            self._is_visible = False
+        if self.panel:
+            self.panel.orderOut_(None)
 
     def set_state(self, state: str, status: Optional[str] = None, subtitle: Optional[str] = None):
+        self.current_state = state or "idle"
         AppHelper.callAfter(self._main_set_state, state, status, subtitle)
 
     def _main_set_state(self, state: str, status: Optional[str], subtitle: Optional[str]):
+        with self._lock:
+            self.current_state = state or "idle"
+            self._is_visible = True
         try:
-            state_json = json.dumps(state or "wake")
-            st_arg = json.dumps(status) if status is not None else "null"
-            sub_arg = json.dumps(subtitle) if subtitle is not None else "null"
+            self.panel.orderFrontRegardless()
+            state_json = json.dumps(state or "idle")
+            st_arg = json.dumps(status if status is not None else ("SWAN" if state == "idle" else "SWAN"))
+            sub_arg = json.dumps(subtitle if subtitle is not None else ("Ready" if state == "idle" else ""))
             self._eval_js(f"window.setState({state_json}, {st_arg}, {sub_arg});")
         except Exception:
             pass
