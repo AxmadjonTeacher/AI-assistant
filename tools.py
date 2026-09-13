@@ -941,22 +941,34 @@ def analyze_screen(query: Optional[str] = None) -> Dict[str, Any]:
             "4. Javobni bevosita ko'ringan narsaning mohiyatidan boshlang (masalan: 'Ekranda Safari orqali YouTube sahifasi ochiq...', 'Ekranda dasturlash kodida xatolik ko'rinmoqda...')."
         )
 
-        try:
-            resp = vision_client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=[
-                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                    system_prompt
-                ]
-            )
-        except Exception:
-            resp = vision_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[
-                    types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-                    system_prompt
-                ]
-            )
+        vision_models = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.7-flash",
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash"
+        ]
+
+        resp = None
+        last_err = None
+        for vm in vision_models:
+            try:
+                resp = vision_client.models.generate_content(
+                    model=vm,
+                    contents=[
+                        types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+                        system_prompt
+                    ]
+                )
+                if resp and resp.text:
+                    break
+            except Exception as ex:
+                last_err = ex
+                continue
+
+        if not resp or not resp.text:
+            raise Exception(f"Barcha vision modellari xatolik berdi: {last_err}")
         return {
             "status": "success",
             "analysis": resp.text,

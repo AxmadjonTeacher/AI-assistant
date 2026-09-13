@@ -90,6 +90,7 @@ def main():
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."
+    pl["NSScreenCaptureUsageDescription"] = "Swan ekrandagi xatoliklar, kodlar va oynalarni tahlil qilish uchun ekranni yozib olish ruxsatidan foydalanadi."
     pl["LSUIElement"] = False  # Allows standard application activation with dock/menubar support
 
     with open(plist_path, "wb") as f:
