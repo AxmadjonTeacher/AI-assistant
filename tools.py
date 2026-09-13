@@ -2591,13 +2591,13 @@ def get_jarvis_tools() -> list[types.Tool]:
         ),
         types.FunctionDeclaration(
             name="create_blender_scene",
-            description="Launches an autonomous 3D director background agent to build, block, animate, or stage a scene in Blender (e.g. 'create a cyberpunk alley in Blender', 'build a floating island scene', 'make a sci-fi room with lighting'). Runs asynchronously in the background so you can immediately tell the user and continue conversing without waiting.",
+            description="Launches an autonomous 3D director background agent to build, modify, animate, or stage a scene in Blender (e.g. 'build a cyberpunk scene in Blender', 'change the camera movement', 'animate camera orbit around the object', 'adjust lighting'). Runs asynchronously in the background so you can immediately acknowledge and continue conversation without waiting.",
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
                     "prompt": types.Schema(
                         type="STRING",
-                        description="The description of the 3D scene, objects, lighting, or animation to create in Blender."
+                        description="The description of the 3D scene, objects, lighting, or camera movement/animation to create or modify in Blender."
                     ),
                     "style": types.Schema(
                         type="STRING",
