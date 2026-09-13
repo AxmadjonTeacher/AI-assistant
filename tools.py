@@ -1089,10 +1089,15 @@ def switch_tab(
     if not target_browser:
         detect_script = '''
         tell application "System Events"
-            set frontApp to name of first application process whose frontmost is true
+            set frontApps to name of every application process whose frontmost is true and name is not "Swan"
+            if (count of frontApps) > 0 then
+                set fApp to item 1 of frontApps
+            else
+                set fApp to ""
+            end if
             set allApps to name of every application process
         end tell
-        return frontApp & "|" & (allApps contains "Google Chrome") & "|" & (allApps contains "Safari") & "|" & (allApps contains "Arc") & "|" & (allApps contains "Brave Browser")
+        return fApp & "|" & (allApps contains "Google Chrome") & "|" & (allApps contains "Safari") & "|" & (allApps contains "Arc") & "|" & (allApps contains "Brave Browser")
         '''
         try:
             res = subprocess.run(["osascript", "-e", detect_script], capture_output=True, text=True, timeout=3.0)
@@ -1106,6 +1111,19 @@ def switch_tab(
 
                 if front_app in ["Google Chrome", "Safari", "Arc", "Brave Browser"]:
                     target_browser = front_app
+                elif clean_target:
+                    if has_chrome:
+                        target_browser = "Google Chrome"
+                    elif has_safari:
+                        target_browser = "Safari"
+                    elif has_arc:
+                        target_browser = "Arc"
+                    elif has_brave:
+                        target_browser = "Brave Browser"
+                    else:
+                        target_browser = front_app or "Google Chrome"
+                elif front_app in ["Terminal", "iTerm2", "Code", "Cursor", "Sublime Text"]:
+                    target_browser = front_app
                 elif has_chrome:
                     target_browser = "Google Chrome"
                 elif has_safari:
@@ -1115,7 +1133,7 @@ def switch_tab(
                 elif has_brave:
                     target_browser = "Brave Browser"
                 else:
-                    target_browser = front_app
+                    target_browser = front_app or "Google Chrome"
         except Exception:
             target_browser = "Google Chrome"
 
@@ -1144,15 +1162,7 @@ def switch_tab(
             else if "{act}" is "close" then
                 close active tab of win
                 return "success:Closed tab"
-            else if "{act}" is "next" then
-                set cur to active tab index of win
-                if cur < totalTabs then
-                    set active tab index of win to (cur + 1)
-                else
-                    set active tab index of win to 1
-                end if
-                return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
-            else if "{act}" is "previous" or "{act}" is "prev" then
+            else if "{act}" is "previous" or "{act}" is "prev" or "{act}" is "back" then
                 set cur to active tab index of win
                 if cur > 1 then
                     set active tab index of win to (cur - 1)
@@ -1160,6 +1170,28 @@ def switch_tab(
                     set active tab index of win to totalTabs
                 end if
                 return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
+            else if "{act}" is "first" then
+                set active tab index of win to 1
+                return "success:Switched to tab 1 (" & (title of active tab of win) & ")"
+            else if "{act}" is "last" then
+                set active tab index of win to totalTabs
+                return "success:Switched to tab " & (totalTabs as string) & " (" & (title of active tab of win) & ")"
+            else if "{act}" is "window" or "{act}" is "next_window" or "{act}" is "switch_window" then
+                set winCount to count of windows
+                if winCount > 1 then
+                    set index of window winCount to 1
+                    return "success:Switched to next window (total " & (winCount as string) & ")"
+                else if totalTabs > 1 then
+                    set cur to active tab index of win
+                    if cur < totalTabs then
+                        set active tab index of win to (cur + 1)
+                    else
+                        set active tab index of win to 1
+                    end if
+                    return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
+                else
+                    return "success:Only 1 window and 1 tab open"
+                end if
             end if
 
             -- Search by name/title across all open windows
@@ -1191,7 +1223,24 @@ def switch_tab(
                 return "success:Switched to tab " & (targetIdx as string) & " (" & (title of active tab of win) & ")"
             end if
 
-            return "error:Please specify a tab number (e.g. 1, 2, 3) or tab name."
+            -- Default action (switch / next / cycle): cycle to next tab or window
+            if totalTabs > 1 then
+                set cur to active tab index of win
+                if cur < totalTabs then
+                    set active tab index of win to (cur + 1)
+                else
+                    set active tab index of win to 1
+                end if
+                return "success:Switched to tab " & (active tab index of win) & " (" & (title of active tab of win) & ")"
+            else
+                set winCount to count of windows
+                if winCount > 1 then
+                    set index of window winCount to 1
+                    return "success:Switched to next window (total " & (winCount as string) & ")"
+                else
+                    return "success:Currently on tab 1 (" & (title of active tab of win) & ")"
+                end if
+            end if
         end tell
         '''
         try:
@@ -1231,15 +1280,7 @@ def switch_tab(
             else if "{act}" is "close" then
                 close current tab of win
                 return "success:Closed tab"
-            else if "{act}" is "next" then
-                set cur to index of current tab of win
-                if cur < totalTabs then
-                    set current tab of win to tab (cur + 1) of win
-                else
-                    set current tab of win to tab 1 of win
-                end if
-                return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
-            else if "{act}" is "previous" or "{act}" is "prev" then
+            else if "{act}" is "previous" or "{act}" is "prev" or "{act}" is "back" then
                 set cur to index of current tab of win
                 if cur > 1 then
                     set current tab of win to tab (cur - 1) of win
@@ -1247,6 +1288,28 @@ def switch_tab(
                     set current tab of win to tab totalTabs of win
                 end if
                 return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
+            else if "{act}" is "first" then
+                set current tab of win to tab 1 of win
+                return "success:Switched to tab 1 (" & (name of current tab of win) & ")"
+            else if "{act}" is "last" then
+                set current tab of win to tab totalTabs of win
+                return "success:Switched to tab " & (totalTabs as string) & " (" & (name of current tab of win) & ")"
+            else if "{act}" is "window" or "{act}" is "next_window" or "{act}" is "switch_window" then
+                set winCount to count of windows
+                if winCount > 1 then
+                    set index of window winCount to 1
+                    return "success:Switched to next window (total " & (winCount as string) & ")"
+                else if totalTabs > 1 then
+                    set cur to index of current tab of win
+                    if cur < totalTabs then
+                        set current tab of win to tab (cur + 1) of win
+                    else
+                        set current tab of win to tab 1 of win
+                    end if
+                    return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
+                else
+                    return "success:Only 1 window and 1 tab open"
+                end if
             end if
 
             -- Search by name across all open windows
@@ -1278,7 +1341,24 @@ def switch_tab(
                 return "success:Switched to tab " & (targetIdx as string) & " (" & (name of current tab of win) & ")"
             end if
 
-            return "error:Please specify a tab number (e.g. 1, 2, 3) or tab name."
+            -- Default action (switch / next / cycle): cycle to next tab or window
+            if totalTabs > 1 then
+                set cur to index of current tab of win
+                if cur < totalTabs then
+                    set current tab of win to tab (cur + 1) of win
+                else
+                    set current tab of win to tab 1 of win
+                end if
+                return "success:Switched to tab " & (index of current tab of win) & " (" & (name of current tab of win) & ")"
+            else
+                set winCount to count of windows
+                if winCount > 1 then
+                    set index of window winCount to 1
+                    return "success:Switched to next window (total " & (winCount as string) & ")"
+                else
+                    return "success:Currently on tab 1 (" & (name of current tab of win) & ")"
+                end if
+            end if
         end tell
         '''
         try:
@@ -1301,37 +1381,37 @@ def switch_tab(
             if tab_index and 1 <= tab_index <= 9:
                 key_script = f'''
                 tell application "{target_browser}" to activate
-                delay 0.1
+                delay 0.05
                 tell application "System Events"
                     keystroke "{tab_index}" using command down
                 end tell
                 '''
                 subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
                 return {"status": "success", "message": f"Switched to tab {tab_index} in {target_browser}", "browser": target_browser}
-            elif act == "next":
+            elif act in ["previous", "prev", "back"]:
                 key_script = f'''
                 tell application "{target_browser}" to activate
-                delay 0.1
-                tell application "System Events"
-                    key code 48 using control down
-                end tell
-                '''
-                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
-                return {"status": "success", "message": f"Switched to next tab in {target_browser}", "browser": target_browser}
-            elif act in ["previous", "prev"]:
-                key_script = f'''
-                tell application "{target_browser}" to activate
-                delay 0.1
+                delay 0.05
                 tell application "System Events"
                     key code 48 using {{control down, shift down}}
                 end tell
                 '''
                 subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
                 return {"status": "success", "message": f"Switched to previous tab in {target_browser}", "browser": target_browser}
+            elif act in ["window", "next_window", "switch_window"]:
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.05
+                tell application "System Events"
+                    key code 50 using command down
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Switched window in {target_browser}", "browser": target_browser}
             elif act == "new":
                 key_script = f'''
                 tell application "{target_browser}" to activate
-                delay 0.1
+                delay 0.05
                 tell application "System Events"
                     keystroke "t" using command down
                 end tell
@@ -1341,16 +1421,61 @@ def switch_tab(
             elif act == "close":
                 key_script = f'''
                 tell application "{target_browser}" to activate
-                delay 0.1
+                delay 0.05
                 tell application "System Events"
                     keystroke "w" using command down
                 end tell
                 '''
                 subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
                 return {"status": "success", "message": f"Closed tab in {target_browser}", "browser": target_browser}
-            return {"status": "error", "message": f"Unsupported action '{act}' for {target_browser}"}
+            else:
+                key_script = f'''
+                tell application "{target_browser}" to activate
+                delay 0.05
+                tell application "System Events"
+                    key code 48 using control down
+                end tell
+                '''
+                subprocess.run(["osascript", "-e", key_script], check=True, timeout=3.0)
+                return {"status": "success", "message": f"Switched to next tab in {target_browser}", "browser": target_browser}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+
+def switch_window(
+    app_name: Optional[str] = None,
+    direction: Optional[str] = "next",
+    action: Optional[str] = "switch"
+) -> Dict[str, Any]:
+    """
+    Switches between open windows and full-screen spaces on macOS using Control + Arrow Left or Right.
+    Supports:
+    - direction: 'next' (or 'right', 'forward' -> Control + Right Arrow)
+                 'previous' (or 'left', 'back', 'prev' -> Control + Left Arrow)
+    - action: 'switch' (default), 'next', 'previous'
+    """
+    dir_clean = (direction or "next").strip().lower()
+    act = (action or "switch").strip().lower()
+
+    if dir_clean in ["previous", "prev", "left", "back"] or act in ["previous", "prev"]:
+        ascript = 'tell application "System Events" to key code 123 using control down'
+        direction_name = "chapdagi oynaga (Ctrl + Left Arrow)"
+        dir_res = "previous"
+    else:
+        ascript = 'tell application "System Events" to key code 124 using control down'
+        direction_name = "o'ngdagi oynaga (Ctrl + Right Arrow)"
+        dir_res = "next"
+
+    try:
+        subprocess.run(["osascript", "-e", ascript], capture_output=True, text=True, timeout=3.0)
+        return {
+            "status": "success",
+            "message": f"Oynalar orasida o'tildi: {direction_name}",
+            "direction": dir_res,
+            "shortcut": "ctrl_arrow"
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 def switch_desktop(
     desktop_index: Optional[int] = None,
@@ -1827,6 +1952,11 @@ TOOL_HANDLERS = {
     "change_tab": switch_tab,
     "select_tab": switch_tab,
     "tab_control": switch_tab,
+    "switch_window": switch_window,
+    "switch_open_windows": switch_window,
+    "change_window": switch_window,
+    "next_window": switch_window,
+    "cycle_windows": switch_window,
     "switch_desktop": switch_desktop,
     "switch_space": switch_desktop,
     "change_desktop": switch_desktop,
@@ -2237,16 +2367,17 @@ def get_jarvis_tools() -> list[types.Tool]:
         types.FunctionDeclaration(
             name="switch_tab",
             description=(
-                "Switches or selects tabs in web browsers (Google Chrome, Safari, Brave, Arc) or tabbed applications on macOS. "
-                "Use this tool whenever the user asks to switch or select tabs (e.g. 'switch to the 1st tab', 'switch to 3rd tab', "
-                "'1-tabga o't', '3-tabga o't', 'keyingi tabga o't', 'switch to YouTube tab', 'next tab', 'close this tab', 'list open tabs')."
+                "Switches, selects, or cycles between open window tabs in web browsers (Google Chrome, Safari, Brave, Arc) or tabbed applications on macOS. "
+                "Use this tool whenever the user asks to switch tabs or switch between open window tabs (e.g. 'switch between the open window tabs', "
+                "'switch tabs', 'switch tab', 'next tab', 'previous tab', 'switch to 1st tab', 'switch to 2nd tab', 'tablar orasida o't', "
+                "'keyingi tab', 'oldingi tab', '1-tabga o't', 'switch to YouTube tab', 'close this tab', 'list open tabs')."
             ),
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
                     "tab_index": types.Schema(
                         type="INTEGER",
-                        description="The 1-based index of the tab to switch to (e.g. 1 for first tab, 2 for second, 3 for third tab, etc.)."
+                        description="Optional 1-based index of the tab to switch to (e.g. 1 for first tab, 2 for second, 3 for third tab, etc.)."
                     ),
                     "tab_name": types.Schema(
                         type="STRING",
@@ -2254,11 +2385,32 @@ def get_jarvis_tools() -> list[types.Tool]:
                     ),
                     "action": types.Schema(
                         type="STRING",
-                        description="Optional action: 'switch' (default), 'next', 'previous', 'new', 'close', or 'list'."
+                        description="Optional action: 'switch' (default, cycles to next tab), 'next', 'previous', 'first', 'last', 'new', 'close', 'window', or 'list'."
                     ),
                     "browser": types.Schema(
                         type="STRING",
                         description="Optional specific browser name: 'Google Chrome', 'Safari', 'Arc', 'Brave Browser'."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="switch_window",
+            description=(
+                "Switches or cycles between open windows of an application or across macOS apps. "
+                "Use this tool whenever the user asks to switch windows (e.g. 'switch window', 'next window', 'switch between open windows', "
+                "'oynani almashtir', 'keyingi oynaga o't', 'oldingi oyna', 'oynalar orasida o't', 'boshqa oynaga o't')."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "app_name": types.Schema(
+                        type="STRING",
+                        description="Optional application name to switch windows within (e.g. 'Google Chrome', 'Safari', 'Terminal', 'Finder')."
+                    ),
+                    "direction": types.Schema(
+                        type="STRING",
+                        description="Optional direction: 'next' (default) or 'previous'."
                     )
                 }
             )

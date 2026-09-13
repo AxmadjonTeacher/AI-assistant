@@ -577,7 +577,7 @@ class SwanApp:
             elif act == "volume":
                 return "Adjusting Volume..."
             return "Controlling Spotify..."
-        elif name in ["switch_tab", "switch_browser_tab", "change_tab", "select_tab"]:
+        elif name in ["switch_tab", "switch_browser_tab", "change_tab", "select_tab", "tab_control"]:
             idx = args.get("tab_index")
             name_val = args.get("tab_name", "")
             act = args.get("action", "switch")
@@ -585,12 +585,16 @@ class SwanApp:
                 return f"Switching to '{name_val}' Tab..."
             elif idx is not None:
                 return f"Switching to Tab {idx}..."
-            elif act in ["next", "previous", "prev"]:
-                return "Switching Tab..."
             elif act == "new":
                 return "Opening New Tab..."
             elif act == "close":
                 return "Closing Tab..."
+            return "Switching Tab..."
+        elif name in ["switch_window", "cycle_windows", "change_window", "next_window", "switch_open_windows"]:
+            app_n = args.get("app_name")
+            if app_n:
+                return f"Switching {app_n} Window..."
+            return "Switching Window..."
         elif name in ["switch_desktop", "switch_space", "change_desktop", "change_space", "switch_workspace"]:
             idx = args.get("desktop_index")
             dir_val = (args.get("direction") or "").lower()

@@ -21,13 +21,15 @@ DEFAULT_MEMORY: Dict[str, Any] = {
         "Javoblar lo'nda, tezkor va aniq harakatga yo'naltirilgan bo'lsin.",
         "Murojaat har doim hurmat bilan 'Janob' deb bo'lsin.",
         "Musiqa tinglash uchun Spotify ishlatiladi.",
-        "Ekranni tahlil qilish (Vision) va tezkor brauzer boshqaruvi yoqilgan."
+        "Ekranni tahlil qilish (Vision) va tezkor brauzer boshqaruvi yoqilgan.",
+        "Ochiq oynalar orasida o'tish: Ctrl + Arrow Left / Right orqali boshqariladi."
     ],
     "learned_facts": [
         "Ismi: Ahmet (Janob)",
         "Tizim: macOS",
         "Til: O'zbek tili (mutlaq)",
-        "Ish uslubi: Aniq, tezkor buyruqlar, ish stollari va tablar boshqaruvi"
+        "Ish uslubi: Aniq, tezkor buyruqlar, ish stollari va tablar boshqaruvi",
+        "Oynalar orasida o'tish: Ctrl + Arrow Left yoki Right"
     ],
     "last_updated": datetime.now().isoformat()
 }
