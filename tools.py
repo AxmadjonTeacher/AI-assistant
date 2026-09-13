@@ -1963,11 +1963,11 @@ def create_blender_scene(prompt: str, style: str = "cinematic", reference_image:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def generate_image(prompt: str, aspect_ratio: str = "1:1") -> dict:
-    """Generates an image from a prompt (nano banana / Gemini image models) and ALWAYS saves it directly onto ~/Desktop and opens it."""
+def generate_image(prompt: str, aspect_ratio: str = "1:1", model: str = "") -> dict:
+    """Generates an image from a prompt (nano banana / Gemini image models or FLUX) and ALWAYS saves it directly onto ~/Desktop and opens it."""
     try:
         from agent_manager import agent_manager
-        return agent_manager.launch_image_agent(prompt=prompt, aspect_ratio=aspect_ratio)
+        return agent_manager.launch_image_agent(prompt=prompt, aspect_ratio=aspect_ratio, model_preference=model if model else None)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -2678,6 +2678,10 @@ def get_jarvis_tools() -> list[types.Tool]:
                     "aspect_ratio": types.Schema(
                         type="STRING",
                         description="Optional aspect ratio: '1:1', '16:9', '9:16', '4:3', '3:4'. Defaults to '1:1'."
+                    ),
+                    "model": types.Schema(
+                        type="STRING",
+                        description="Optional image model preference, e.g. 'nano banana', 'nano-banana-pro-preview', 'gemini-3.1-flash-lite-image', 'flux', 'turbo'."
                     )
                 },
                 required=["prompt"]

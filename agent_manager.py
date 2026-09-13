@@ -141,6 +141,40 @@ class AgentManager:
         self.tasks: Dict[str, AgentTask] = {}
         self._lock = threading.Lock()
 
+    def _sync_hud(self, recent_title: Optional[str] = None, is_completion: bool = False):
+        """Synchronizes top-right HUD with all concurrent background tasks."""
+        with self._lock:
+            running = [t for t in self.tasks.values() if t.status == "running"]
+            completed = [t for t in self.tasks.values() if t.status == "completed"]
+
+        if is_completion and running:
+            # One task completed, but other agents are still actively working!
+            # Flash completion for 2.2 seconds without hiding, then revert to the active task(s)
+            _update_hud_completed("1 Task Ready ✅", (recent_title or "Task finished")[:25], auto_hide_seconds=0)
+            def _resume_working():
+                time.sleep(2.2)
+                with self._lock:
+                    still_running = [t for t in self.tasks.values() if t.status == "running"]
+                if still_running:
+                    if len(still_running) > 1:
+                        names = " + ".join([t.agent_type.replace("_", " ").title() for t in still_running[:2]])
+                        _update_hud_working(f"{len(still_running)} Agents Active 🚀", names)
+                    else:
+                        _update_hud_working("Agent working...", still_running[0].title[:28])
+                else:
+                    _update_hud_completed("All tasks finished ✅", "", auto_hide_seconds=4.0)
+            threading.Thread(target=_resume_working, daemon=True).start()
+            return
+
+        if len(running) > 1:
+            agent_names = " + ".join([t.agent_type.replace("_", " ").title() for t in running[:2]])
+            _update_hud_working(f"{len(running)} Agents Active 🚀", agent_names)
+        elif len(running) == 1:
+            _update_hud_working("Agent working...", running[0].title[:28])
+        else:
+            display_title = recent_title or (completed[-1].title if completed else "Tasks completed")
+            _update_hud_completed("Agent finished ✅", display_title[:28], auto_hide_seconds=4.0)
+
     def launch_blender_scene(self, prompt: str, style: str = "cinematic", reference_image: Optional[str] = None) -> Dict[str, Any]:
         """Launches an autonomous 3D director agent to build a scene in Blender,
         or reconstructs a 2D reference logo/image into a high-fidelity 3D model.
@@ -155,11 +189,9 @@ class AgentManager:
             img_name = os.path.basename(resolved_img)
             task_title = f"3D Logo: {img_name}"
             task_type = "blender_logo_3d"
-            hud_text = f"Recreating {img_name} in 3D..."
         else:
             task_title = f"Blender: {short_title}"
             task_type = "blender"
-            hud_text = f"Blender: {short_title}"
 
         task = AgentTask(
             task_id=task_id,
@@ -171,10 +203,10 @@ class AgentManager:
         with self._lock:
             self.tasks[task_id] = task
 
-        # 1. Update top-right corner HUD immediately
-        _update_hud_working("Agent vision active 👁️" if is_reconstruction else "Agent working...", hud_text)
+        # Update top-right corner HUD with multi-agent awareness
+        self._sync_hud()
 
-        # 2. Run execution in background thread so Swan is never blocked
+        # Run execution in background thread so Swan is never blocked
         thread = threading.Thread(target=self._run_blender_worker, args=(task, style, resolved_img), daemon=True)
         thread.start()
 
@@ -204,8 +236,8 @@ class AgentManager:
         with self._lock:
             self.tasks[task_id] = task
 
-        hud_label = "Agent editing image..." if is_edit else "Agent generating image..."
-        _update_hud_working(hud_label, short_title)
+        # Update top-right corner HUD with multi-agent awareness
+        self._sync_hud()
 
         thread = threading.Thread(
             target=self._run_image_worker,
@@ -236,7 +268,7 @@ class AgentManager:
         with self._lock:
             self.tasks[task_id] = task
 
-        _update_hud_working("Agent working...", f"{agent_type.capitalize()}: {short_title}")
+        self._sync_hud()
 
         thread = threading.Thread(target=self._run_generic_worker, args=(task, details), daemon=True)
         thread.start()
@@ -361,7 +393,7 @@ class AgentManager:
         return res
 
     @staticmethod
-    def _generate_with_fallback(client, contents, config, models=("gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest", "gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite")):
+    def _generate_with_fallback(client, contents, config, models=("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-flash-latest", "gemini-3.1-pro-preview")):
         last_err = None
         from google.genai import types
         if config and not getattr(config, "http_options", None):
@@ -426,66 +458,79 @@ class AgentManager:
 
                 system_instruction = (
                     "You are a World-Class 3D Technical Artist, Master Sculptor, and Blender 5.2 Python (bpy) Automation Specialist.\n"
-                    "Your mission is to analyze this 2D reference logo / graphic image and write a complete, self-contained Blender 5.2 Python script that creates an exact, gorgeous 3D version of it in Blender.\n\n"
-                    "CRITICAL BLENDER 5.2 RULES & MODELING PATTERNS:\n"
-                    "1. CLEAN SLATE & RESET:\n"
-                    "   for obj in list(bpy.data.objects): bpy.data.objects.remove(obj, do_unlink=True)\n"
-                    "   for mat in list(bpy.data.materials): bpy.data.materials.remove(mat, do_unlink=True)\n"
-                    "   for c in list(bpy.data.curves): bpy.data.curves.remove(c, do_unlink=True)\n\n"
-                    "2. 2D CURVE MODELING WITH EXTRUSION & BEVELING (BEST FOR LOGOS):\n"
-                    "   - For all shapes, wings, crests, emblems, and outlines, create 2D Curves:\n"
-                    "     c = bpy.data.curves.new(name='ShapeName', type='CURVE')\n"
-                    "     c.dimensions = '2D'\n"
-                    "     c.fill_mode = 'BOTH'\n"
-                    "     c.extrude = 0.08  # local Z extrusion depth\n"
-                    "     c.bevel_depth = 0.015  # smooth beveled highlight edge\n"
-                    "     c.bevel_resolution = 4\n"
-                    "   - Spline creation:\n"
+                    "Your mission is to analyze this 2D reference logo / graphic image and write a complete, self-contained Blender 5.2 Python script that creates a stunning, TRUE 3D VOLUMETRIC SCULPTURAL MASTERPIECE in Blender.\n\n"
+                    "CRITICAL VOLUMETRIC 3D SCULPTING RULES (NEVER CREATE FLAT 2D EXTRUSIONS):\n"
+                    "The user wants a genuine 3D sculptural model, NOT a flat silhouette extruded on a 2D plane!\n\n"
+                    "1. CLEAN SLATE & PURGE:\n"
+                    "   for o in list(bpy.data.objects): bpy.data.objects.remove(o, do_unlink=True)\n"
+                    "   for m in list(bpy.data.materials): bpy.data.materials.remove(m, do_unlink=True)\n"
+                    "   for c in list(bpy.data.curves): bpy.data.curves.remove(c, do_unlink=True)\n"
+                    "   for img in list(bpy.data.images): bpy.data.images.remove(img, do_unlink=True)\n\n"
+                    "2. CIRCLES, RINGS & DONUTS MUST BE TRUE 3D TORUSES:\n"
+                    "   - Any circular elements, rings, or loops (like top and bottom circles in logos) MUST be modeled as true 3D Toruses:\n"
+                    "     bpy.ops.mesh.primitive_torus_add(\n"
+                    "         major_radius=0.40, minor_radius=0.09,\n"
+                    "         major_segments=64, minor_segments=32,\n"
+                    "         location=(0.0, 0.0, z_pos),\n"
+                    "         rotation=(math.radians(90), 0, 0)\n"
+                    "     )\n"
+                    "     obj = bpy.context.active_object\n"
+                    "     bpy.ops.object.shade_smooth()\n\n"
+                    "3. WINGS, CRESTS & OUTLINES MUST BE CLOSED 3D VOLUMETRIC CONTOUR LOOPS (NEVER SINGLE OPEN STICKS):\n"
+                    "   - The wings in logos are CLOSED RIBBONS / CONTOUR LOOPS enclosing negative space! NEVER make an open single line:\n"
+                    "     c = bpy.data.curves.new(name='Wing_Curve', type='CURVE')\n"
+                    "     c.dimensions = '3D'\n"
+                    "     c.bevel_depth = 0.085  # thick, lustrous rounded 3D volume\n"
+                    "     c.bevel_resolution = 6\n"
+                    "     c.use_fill_caps = True\n"
                     "     spline = c.splines.new(type='BEZIER')\n"
-                    "     spline.use_cyclic_u = True (for closed shapes)\n"
-                    "     if len(points) > 1: spline.bezier_points.add(len(points) - 1)\n"
-                    "     Set coordinates bp.co = (x, y, 0.0). Keep coordinates centered around (0,0) in range [-2.0, 2.0].\n"
-                    "     For sharp/corner points: bp.handle_left_type = 'VECTOR', bp.handle_right_type = 'VECTOR'.\n"
-                    "     For curved arcs: bp.handle_left_type = 'AUTO', bp.handle_right_type = 'AUTO'.\n"
-                    "   - AUTOMATIC HOLE CUTOUTS:\n"
-                    "     If a shape has hollow rings, donut holes, or cutouts (like concentric circles or letters O, P, A), add BOTH the outer contour and the inner cutout splines into the SAME curve object! Blender's 2D curve engine will automatically carve the hole cleanly without buggy booleans.\n\n"
-                    "3. GEOMETRIC PRIMITIVES COMPOSITION:\n"
-                    "   - If parts are circles, disks, or cylinders, you can use primitives with non-destructive bevel modifier:\n"
-                    "     bpy.ops.mesh.primitive_cylinder_add(radius=..., depth=..., vertices=64, location=(...))\n"
-                    "     mod = obj.modifiers.new(name='EdgeBevel', type='BEVEL')\n"
-                    "     mod.width = 0.03; mod.segments = 4; mod.limit_method = 'ANGLE'\n\n"
-                    "4. STEPPED Z-OFFSETS (ZERO Z-FIGHTING):\n"
-                    "   - Overlapping shapes MUST have distinct Z-depth offsets (e.g. Base/Shield at Z=0.00, Midground shapes at Z=0.03, Foreground icon/text at Z=0.06).\n\n"
-                    "5. EXACT PBR MATERIALS & LINEAR sRGB COLOR SPACE:\n"
-                    "   - Extract the exact colors from the logo image.\n"
-                    "   - Convert sRGB (0.0 to 1.0) to Linear Scene RGB:\n"
-                    "     def srgb_to_linear(c):\n"
-                    "         return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4\n"
-                    "   - Set Principled BSDF inputs: 'Base Color', 'Roughness' (0.15 for semi-gloss), 'Metallic' (0.15 for subtle sheen or 0.9 for chrome/gold), 'Coat Weight' (0.5 for lacquer finish).\n\n"
-                    "6. REFERENCE IMAGE GUIDE OVERLAY (BACKGROUND EMPTY):\n"
-                    "   - Add the reference image as a guide empty directly behind the 3D geometry so the user can see 1:1 alignment:\n"
-                    f"     ref_path = r'{reference_image_path}'\n"
-                    "     if os.path.exists(ref_path):\n"
-                    "         img = bpy.data.images.load(ref_path)\n"
-                    "         empty = bpy.data.objects.new('Ref_Logo_Guide', None)\n"
-                    "         empty.empty_display_type = 'IMAGE'\n"
-                    "         empty.data = img\n"
-                    "         empty.empty_image_depth = 'BACK'\n"
-                    "         empty.empty_image_offset = (-0.5, -0.5)\n"
-                    "         empty.scale = (4.0, 4.0, 4.0)\n"
-                    "         empty.location = (0.0, 0.0, -0.06)\n"
-                    "         empty.color[3] = 0.4\n"
-                    "         bpy.context.collection.objects.link(empty)\n\n"
-                    "7. STUDIO LIGHTING RIG & REFLECTIVE FLOOR:\n"
-                    "   - 3-point studio lighting (Key Area light with warm tone, Fill Area light with soft cool tone, Rim Area light catching the bevel edges).\n"
-                    "   - Dark reflective floor plane (Roughness: 0.2, Metallic: 0.3).\n\n"
-                    "8. CAMERA & HOLLYWOOD CHOREOGRAPHY:\n"
-                    "   - Empty 'Camera_LookTarget' placed at (0, 0, 0).\n"
-                    "   - Camera with TRACK_TO constraint pointing at Camera_LookTarget, 85mm telephoto lens, placed at distance ~5.0m to frame the entire logo beautifully.\n"
-                    "   - cam.data.dof.use_dof = True, cam.data.dof.focus_object = look_target, cam.data.dof.aperture_fstop = 2.8.\n"
-                    "   - Animate smooth orbital move around the 3D logo from frame 1 to 120.\n"
-                    "   - scene.frame_start = 1, scene.frame_end = 120, scene.frame_set(1).\n\n"
-                    "9. Output ONLY raw executable Python code inside a ```python ``` markdown codeblock without explanations."
+                    "     spline.use_cyclic_u = True  # MUST be closed loop!\n"
+                    "   - The spline MUST trace the COMPLETE closed loop: root V-notch -> upper arch -> wingtip -> under-wing return -> back to root!\n"
+                    "     For example for upper wing:\n"
+                    "       (0.01, 0.0, 0.00) [root V-notch, handle VECTOR],\n"
+                    "       (0.40, -0.06, 0.36) [arching up],\n"
+                    "       (1.20, -0.16, 0.58) [high crest],\n"
+                    "       (2.40, -0.30, 0.54) [long sweep],\n"
+                    "       (3.15, -0.42, 0.42) [outer wingtip, handle VECTOR],\n"
+                    "       (2.60, -0.32, 0.22) [under-tip tuck],\n"
+                    "       (1.70, -0.18, 0.22) [lower contour],\n"
+                    "       (0.80, -0.08, 0.18) [inner return]\n"
+                    "     And similarly for lower wing: a complete closed loop from inner root (0.45, -0.05, -0.18) swooping out to tip (2.80, -0.38, -0.02) and returning via belly (0.60, -0.06, -0.45)!\n"
+                    "   - AERODYNAMIC 3D CURVATURE IN 3D SPACE:\n"
+                    "     Points arch forward along Y as they extend outward in X, giving genuine 3D aeronautical depth!\n"
+                    "   - SYMMETRY VIA MIRROR MODIFIER:\n"
+                    "     Model the right side accurately, then add Mirror Modifier: mir = obj.modifiers.new('Mirror', 'MIRROR'); mir.use_axis[0] = True.\n\n"
+                    "4. PBR TEAL / MULTI-TONE LACQUER MATERIAL WITH CLEARCOAT:\n"
+                    "   - Extract exact colors from logo image. Convert sRGB to Linear RGB.\n"
+                    "   - Principled BSDF setup:\n"
+                    "     'Base Color': (0.010, 0.44, 0.41, 1.0) for teal or logo linear color.\n"
+                    "     'Roughness': 0.14 (luxurious satin gloss).\n"
+                    "     'Metallic': 0.20 (subtle metallic flake depth).\n"
+                    "     'Coat Weight': 0.85 (shiny automotive clearcoat lacquer).\n"
+                    "     'Coat Roughness': 0.03.\n\n"
+                    "5. STUDIO ENVIRONMENT & REFLECTIVE PEDESTAL:\n"
+                    "   - Add dark reflective floor pedestal below model catching soft drop shadows:\n"
+                    "     bpy.ops.mesh.primitive_cylinder_add(radius=7.0, depth=0.25, vertices=64, location=(0, 0, -2.0))\n"
+                    "     Floor material: Base Color (0.012, 0.012, 0.018, 1.0), Roughness 0.18, Metallic 0.5.\n\n"
+                    "6. THREE-POINT HOLLYWOOD STUDIO LIGHTING RIG:\n"
+                    "   - Key Light: AREA light, Energy 800W, size 3.5, warm tone (1.0, 0.98, 0.95), location (5.0, -6.0, 4.0).\n"
+                    "   - Fill Light: AREA light, Energy 350W, size 5.0, soft blue-cyan tone (0.80, 0.92, 1.0), location (-6.0, -5.0, 3.0).\n"
+                    "   - Rim Light: AREA light, Energy 950W, size 4.0, cyan-white tone (0.55, 0.95, 1.0), location (0.0, 6.0, 3.5) catching the 3D beveled edges.\n\n"
+                    "7. DYNAMIC 3D CAMERA PRESENTATION & 360-DEGREE TURNTABLE ORBIT (NEVER FLAT FRONT VIEW):\n"
+                    "   - Create Camera_LookTarget Empty at subject center (0.0, -0.15, 0.05).\n"
+                    "   - Camera with TRACK_TO constraint pointing at Camera_LookTarget. bpy.context.scene.camera = cam_obj.\n"
+                    "   - Focal lens: 45mm, Depth of Field enabled (cam.data.dof.use_dof = True, cam.data.dof.focus_object = cam_target, aperture_fstop = 2.8).\n"
+                    "   - Position at dynamic 3/4 perspective elevation angle (~35 deg elevation, ~35 deg azimuth, distance r ~ 9.0m) so the volumetric 3D thickness is immediately apparent.\n"
+                    "   - Master Timeline: scene.render.fps = 24, scene.frame_start = 1, scene.frame_end = 120.\n"
+                    "   - Animate smooth Hollywood turntable orbit around the 3D sculpture from frame 1 to 120:\n"
+                    "     r = 9.2; z_base = 2.8\n"
+                    "     for frame in range(1, 121):\n"
+                    "         t = (frame - 1) / 120.0\n"
+                    "         angle = math.radians(35) + t * 2 * math.pi\n"
+                    "         cam.location = (math.sin(angle) * r, -math.cos(angle) * r, z_base + 0.5 * math.sin(t * 2 * math.pi))\n"
+                    "         cam.keyframe_insert(data_path='location', frame=frame)\n"
+                    "     scene.frame_set(1)\n\n"
+                    "8. Output ONLY raw executable Python code inside a ```python ``` markdown codeblock without explanations."
                 )
 
                 user_msg = f"Recreate this reference logo ({img_name}) as a stunning 3D model in Blender 5.2.\nUser request: {task.prompt}"
@@ -666,8 +711,8 @@ class AgentManager:
             task.finished_at = time.time()
             task.result_message = f"{action_desc} successfully with {obj_count} objects in Blender! Press Spacebar in Blender to play animation."
 
-            # Update HUD to completed
-            _update_hud_completed("3D Model Created! ✅" if reference_image_path else "Agent finished ✅", hud_msg, auto_hide_seconds=5.0)
+            # Synchronize multi-agent HUD
+            self._sync_hud(recent_title=hud_msg, is_completion=True)
             self._play_chime()
 
         except Exception as e:
@@ -675,7 +720,7 @@ class AgentManager:
             task.status = "failed"
             task.finished_at = time.time()
             task.error = str(e)
-            _update_hud_completed("Agent failed ⚠️", f"Blender error: {str(e)[:22]}", auto_hide_seconds=5.0)
+            self._sync_hud(recent_title="Blender failed", is_completion=True)
 
     def _run_generic_worker(self, task: AgentTask, details: str):
         print(f"🤖 [Generic Agent] Starting task: '{task.title}'", flush=True)
@@ -692,14 +737,14 @@ class AgentManager:
             task.finished_at = time.time()
             task.result_message = response.text or "Task completed"
 
-            _update_hud_completed("Agent finished ✅", task.title[:25], auto_hide_seconds=4.0)
+            self._sync_hud(recent_title=task.title[:25], is_completion=True)
             self._play_chime()
         except Exception as e:
             print(f"❌ [Generic Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
             task.error = str(e)
-            _update_hud_completed("Agent failed ⚠️", f"Error: {str(e)[:22]}", auto_hide_seconds=5.0)
+            self._sync_hud(recent_title="Agent failed", is_completion=True)
 
     def _run_image_worker(self, task: AgentTask, source_image_path: Optional[str], aspect_ratio: str, model_preference: Optional[str]):
         print(f"🎨 [Image Agent] Starting image task: '{task.title}' (aspect: {aspect_ratio})", flush=True)
@@ -807,7 +852,7 @@ class AgentManager:
                 print(f"⚠️ [Image Agent] Google GenAI setup notice: {genai_err}", flush=True)
 
             if not success or not os.path.exists(dest_path) or os.path.getsize(dest_path) < 1000:
-                print("🎨 [Image Agent] Utilizing robust high-resolution visual engine fallback...", flush=True)
+                print("🎨 [Image Agent] Utilizing robust high-resolution visual engine with watermark purge...", flush=True)
                 final_prompt = task.prompt
                 if pil_source:
                     try:
@@ -821,21 +866,55 @@ class AgentManager:
                             final_prompt = v_resp.text.strip().replace("\n", " ")
                     except Exception:
                         pass
+                else:
+                    try:
+                        from google import genai
+                        client = genai.Client(api_key=config.api_key)
+                        enh_resp = client.models.generate_content(
+                            model="gemini-flash-latest",
+                            contents=(
+                                "You are an award-winning master digital visual artist.\n"
+                                f"Convert this image request into an ultra-detailed, photorealistic, cinematic visual description under 150 characters: '{task.prompt}'.\n"
+                                "Include: 8k, volumetric lighting, photorealistic, masterpiece.\n"
+                                "Output ONLY the prompt string in English, no quotes, under 150 characters."
+                            )
+                        )
+                        if enh_resp.text:
+                            final_prompt = enh_resp.text.strip().replace("\n", " ")
+                    except Exception:
+                        pass
 
-                import urllib.request, urllib.parse, ssl
+                import urllib.request, urllib.parse, ssl, random
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
 
-                enc_p = urllib.parse.quote(final_prompt)
-                url = f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&nologo=true"
+                clean_prompt = final_prompt[:180].strip()
+                enc_p = urllib.parse.quote(clean_prompt)
+                seed = random.randint(1000, 999999)
+                url = f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&nologo=true&seed={seed}"
                 req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
-                with urllib.request.urlopen(req, timeout=35, context=ctx) as resp:
-                    raw_bytes = resp.read()
-                    if len(raw_bytes) > 1000:
-                        with open(dest_path, "wb") as f:
-                            f.write(raw_bytes)
-                        success = True
+                try:
+                    with urllib.request.urlopen(req, timeout=35, context=ctx) as resp:
+                        raw_bytes = resp.read()
+                except Exception as net_err:
+                    print(f"⚠️ [Image Agent] Initial request notice: {net_err}. Retrying with direct prompt...", flush=True)
+                    direct_p = urllib.parse.quote(task.prompt[:120].strip())
+                    alt_url = f"https://image.pollinations.ai/prompt/{direct_p}?width={width}&height={height}&nologo=true&seed={random.randint(1, 9999)}"
+                    req2 = urllib.request.Request(alt_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
+                    with urllib.request.urlopen(req2, timeout=35, context=ctx) as resp2:
+                        raw_bytes = resp2.read()
+
+                if len(raw_bytes) > 1000:
+                    # Load image, crop bottom 42px to eliminate watermark logo completely, and resize back cleanly
+                    from PIL import Image
+                    import io
+                    raw_img = Image.open(io.BytesIO(raw_bytes))
+                    w, h = raw_img.size
+                    clean_img = raw_img.crop((0, 0, w, max(10, h - 42)))
+                    clean_img = clean_img.resize((width, height), Image.Resampling.LANCZOS)
+                    clean_img.save(dest_path, "PNG", quality=95)
+                    success = True
 
             if not os.path.exists(dest_path) or os.path.getsize(dest_path) < 1000:
                 raise RuntimeError("Failed to generate and save image file to Desktop.")
@@ -849,7 +928,8 @@ class AgentManager:
             task.finished_at = time.time()
             task.result_message = f"Image saved to Desktop: {dest_path}"
 
-            _update_hud_completed("Image ready on Desktop! 🎨", dest_filename, auto_hide_seconds=5.0)
+            # Synchronize multi-agent HUD
+            self._sync_hud(recent_title=dest_filename, is_completion=True)
             self._play_chime()
 
         except Exception as e:
@@ -857,7 +937,7 @@ class AgentManager:
             task.status = "failed"
             task.finished_at = time.time()
             task.error = str(e)
-            _update_hud_completed("Image task failed ⚠️", str(e)[:22], auto_hide_seconds=5.0)
+            self._sync_hud(recent_title="Image failed", is_completion=True)
 
     def get_status(self, task_id: Optional[str] = None) -> Dict[str, Any]:
         with self._lock:
