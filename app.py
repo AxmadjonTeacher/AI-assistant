@@ -390,8 +390,7 @@ class SwanApp:
             self.hud.show(state="speaking", status="SWAN", subtitle=self._active_action or "Gapirmoqda...")
             return
 
-        if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._on_wake_word_triggered(suffix="", has_immediate_command=False), self._loop)
+        self._on_wake_word_triggered(suffix="")
 
     def _quit(self):
         print(" [DEBUG] _quit() invoked from MenuBar/Dock")

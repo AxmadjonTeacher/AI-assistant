@@ -107,13 +107,19 @@ class LiquidHUDWindow:
         self.nav_delegate.on_loaded = self._on_page_loaded
         self.webview.setNavigationDelegate_(self.nav_delegate)
 
+        # Robust template resolution
+        resolved_path = self.template_path
+        if not resolved_path or not os.path.exists(resolved_path):
+            from resource_helper import get_resource_path
+            resolved_path = get_resource_path("hud_template.html")
+
         try:
-            with open(self.template_path, "r", encoding="utf-8") as f:
+            with open(resolved_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
-            base_dir_url = NSURL.fileURLWithPath_(os.path.dirname(self.template_path))
+            base_dir_url = NSURL.fileURLWithPath_(os.path.dirname(resolved_path))
             self.webview.loadHTMLString_baseURL_(html_content, base_dir_url)
         except Exception as e:
-            print(f"[ERROR] Loading HUD template string: {e}")
+            print(f"[ERROR] Loading HUD template string from {resolved_path}: {e}")
 
         self.panel.setContentView_(self.webview)
         self.panel.orderOut_(None)
@@ -127,6 +133,8 @@ class LiquidHUDWindow:
 
     def _eval_js(self, js_code: str):
         try:
+            if not self._page_loaded:
+                self._pending_evals.append(js_code)
             if self.webview:
                 self.webview.evaluateJavaScript_completionHandler_(js_code, None)
         except Exception:

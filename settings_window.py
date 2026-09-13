@@ -160,13 +160,18 @@ class SettingsWindow:
         self.nav_delegate.on_quit = self.on_quit
         self.webview.setNavigationDelegate_(self.nav_delegate)
 
+        resolved_path = self._template_path
+        if not resolved_path or not os.path.exists(resolved_path):
+            from resource_helper import get_resource_path
+            resolved_path = get_resource_path("settings_template.html")
+
         try:
-            with open(self._template_path, "r", encoding="utf-8") as f:
+            with open(resolved_path, "r", encoding="utf-8") as f:
                 html_content = f.read()
-            base_dir_url = NSURL.fileURLWithPath_(os.path.dirname(self._template_path))
+            base_dir_url = NSURL.fileURLWithPath_(os.path.dirname(resolved_path))
             self.webview.loadHTMLString_baseURL_(html_content, base_dir_url)
         except Exception as e:
-            print(f"[ERROR] Loading settings template: {e}")
+            print(f"[ERROR] Loading settings template from {resolved_path}: {e}")
 
         self.window.setContentView_(self.webview)
 
