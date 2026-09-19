@@ -173,19 +173,6 @@ class SwanApp:
             on_quit=self._quit
         )
 
-        # Greet on launch so user visually sees the notch HUD immediately
-        AppHelper.callLater(0.5, lambda: (self.state_machine.on_wake("Tayyorman, Janob"), self.hud.show(state="wake", status="SWAN", subtitle="Tayyorman, Janob")))
-        AppHelper.callLater(2.8, lambda: (self.state_machine.on_idle(), self.hud.hide()))
-
-    def _on_state_machine_update(self, state: AssistantState, label: str, detail: str):
-        """Dispatches state machine updates to both the notch HUD and menu bar."""
-        try:
-            self.hud.set_state(state.value, status=state.value.upper(), subtitle=label)
-            if not self._interrupted:
-                self.menu_bar.set_status(f"Swan: {label}")
-        except Exception as e:
-            print(f"⚠️ [HUD State Dispatch Error]: {e}", flush=True)
-
         # 3. Audio & AI Core
         self.audio_manager = AudioManager()
         self.client = GeminiLiveClient(initial_mode=config.mode)
@@ -227,6 +214,15 @@ class SwanApp:
         self._active_action = ""
         self._paused_media_on_wake = False
         self._media_explicitly_stopped = False
+
+    def _on_state_machine_update(self, state: AssistantState, label: str, detail: str):
+        """Dispatches state machine updates to both the notch HUD and menu bar."""
+        try:
+            self.hud.set_state(state.value, status=state.value.upper(), subtitle=label)
+            if hasattr(self, "_interrupted") and not self._interrupted:
+                self.menu_bar.set_status(f"Swan: {label}")
+        except Exception as e:
+            print(f"⚠️ [HUD State Dispatch Error]: {e}", flush=True)
 
     def start(self):
         """Starts background asyncio loop and runs Cocoa main event loop."""
@@ -864,6 +860,9 @@ class SwanApp:
         except asyncio.CancelledError:
             print("🛑 [Wake Cycle] Task cancelled cleanly.", flush=True)
         finally:
+            if not self._is_active():
+                self.state_machine.on_idle()
+                self.hud.hide(delay=0.2)
             self._resume_media_if_appropriate()
             self.wake_detector.reset()
             self.wake_detector.enabled = True
