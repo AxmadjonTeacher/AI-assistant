@@ -62,6 +62,7 @@ def main():
         f"--hidden-import 'PIL' "
         f"--hidden-import 'pynput' "
         f"--hidden-import 'resource_helper' "
+        f"--hidden-import 'state_machine' "
         f"app.py"
     )
     run(pyinstaller_cmd)
@@ -79,6 +80,17 @@ def main():
         shutil.copy2(vosk_src, vosk_dst)
         run(f"codesign --force --sign '{SIGN_IDENTITY}' '{vosk_dst}'")
 
+    # Bundle blueutil if available on host
+    for b_path in ["/opt/homebrew/bin/blueutil", "/usr/local/bin/blueutil"]:
+        if os.path.exists(b_path):
+            macos_dir = os.path.join(app_path, "Contents", "MacOS")
+            blueutil_dst = os.path.join(macos_dir, "blueutil")
+            shutil.copy2(b_path, blueutil_dst)
+            os.chmod(blueutil_dst, 0o755)
+            run(f"codesign --force --sign '{SIGN_IDENTITY}' '{blueutil_dst}'")
+            print(f"[INFO] Bundled blueutil from {b_path} into {blueutil_dst}")
+            break
+
     # 3. Enhance Info.plist
     print("3. Updating Info.plist with macOS permissions...")
     plist_path = os.path.join(app_path, "Contents", "Info.plist")
@@ -87,12 +99,14 @@ def main():
 
     pl["CFBundleDisplayName"] = APP_NAME
     pl["CFBundleIdentifier"] = BUNDLE_ID
-    pl["CFBundleShortVersionString"] = "1.0.0"
-    pl["CFBundleVersion"] = "1.0.0"
+    pl["CFBundleShortVersionString"] = "1.1.0"
+    pl["CFBundleVersion"] = "1.1.0"
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."
     pl["NSScreenCaptureUsageDescription"] = "Swan ekrandagi xatoliklar, kodlar va oynalarni tahlil qilish uchun ekranni yozib olish ruxsatidan foydalanadi."
+    pl["NSBluetoothAlwaysUsageDescription"] = "Swan foydalanuvchi ovozli buyrug'i bilan Bluetooth-ni yoqish va o'chirish uchun ruxsat talab qiladi."
+    pl["NSBluetoothPeripheralUsageDescription"] = "Swan Bluetooth holatini boshqarish va moslamalarni ulash uchun ushbu ruxsatdan foydalanadi."
     pl["LSUIElement"] = False  # Allows standard application activation with dock/menubar support
 
     with open(plist_path, "wb") as f:

@@ -7,6 +7,7 @@ import glob
 import urllib.parse
 import json
 import time
+import ctypes
 from datetime import datetime
 from typing import Dict, Any, Optional, Callable, List
 from google.genai import types
@@ -1641,42 +1642,320 @@ def get_current_time() -> Dict[str, Any]:
         "summary": f"{time_24h} ({time_12h}), {day_name}, {date_str} ({tz_formatted})"
     }
 
-def system_control(action: str, value: Optional[str] = None) -> Dict[str, Any]:
-    """Controls system volume, media, or queries system status."""
-    action_lower = action.strip().lower()
+def _control_bluetooth(action: str, value: Optional[str] = None) -> Dict[str, Any]:
+    import sys
+    candidates = [
+        os.path.join(os.path.dirname(sys.executable), "blueutil"),
+        os.path.join(getattr(sys, "_MEIPASS", ""), "blueutil"),
+        "/Applications/Swan.app/Contents/MacOS/blueutil",
+        "/opt/homebrew/bin/blueutil",
+        "/usr/local/bin/blueutil",
+        shutil.which("blueutil")
+    ]
+    blueutil_bin = None
+    for c in candidates:
+        if c and os.path.exists(c) and os.access(c, os.X_OK):
+            blueutil_bin = c
+            break
 
+    if action in ["on", "enable", "1", "true"]:
+        if blueutil_bin:
+            try:
+                res = subprocess.run([blueutil_bin, "-p", "1"], capture_output=True, text=True, timeout=3.0)
+                if res.returncode == 0:
+                    return {"status": "success", "feature": "bluetooth", "power": "on", "message": "Bluetooth turned ON"}
+            except Exception:
+                pass
+        # Safe fallback via Shortcuts / AppleScript without in-process TCC triggers
+        try:
+            res = subprocess.run(["shortcuts", "run", "Turn Bluetooth On"], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "feature": "bluetooth", "power": "on", "message": "Bluetooth turned ON"}
+        except Exception:
+            pass
+        return {"status": "error", "message": "Could not toggle Bluetooth (blueutil helper unavailable)"}
+
+    elif action in ["off", "disable", "0", "false"]:
+        if blueutil_bin:
+            try:
+                res = subprocess.run([blueutil_bin, "-p", "0"], capture_output=True, text=True, timeout=3.0)
+                if res.returncode == 0:
+                    return {"status": "success", "feature": "bluetooth", "power": "off", "message": "Bluetooth turned OFF"}
+            except Exception:
+                pass
+        try:
+            res = subprocess.run(["shortcuts", "run", "Turn Bluetooth Off"], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "feature": "bluetooth", "power": "off", "message": "Bluetooth turned OFF"}
+        except Exception:
+            pass
+        return {"status": "error", "message": "Could not toggle Bluetooth (blueutil helper unavailable)"}
+
+    elif action in ["toggle"]:
+        if blueutil_bin:
+            try:
+                res = subprocess.run([blueutil_bin, "-p"], capture_output=True, text=True, timeout=3.0)
+                p = res.stdout.strip()
+                new_p = "0" if p == "1" else "1"
+                subprocess.run([blueutil_bin, "-p", new_p], timeout=3.0)
+                return {"status": "success", "feature": "bluetooth", "power": "on" if new_p == "1" else "off", "message": f"Bluetooth toggled to {'ON' if new_p == '1' else 'OFF'}"}
+            except Exception:
+                pass
+        try:
+            res = subprocess.run(["shortcuts", "run", "Toggle Bluetooth"], capture_output=True, text=True, timeout=3.0)
+            if res.returncode == 0:
+                return {"status": "success", "feature": "bluetooth", "message": "Bluetooth toggled"}
+        except Exception:
+            pass
+        return {"status": "error", "message": "Could not toggle Bluetooth (blueutil helper unavailable)"}
+
+    elif action in ["status", "query", "get"]:
+        if blueutil_bin:
+            try:
+                res = subprocess.run([blueutil_bin, "-p"], capture_output=True, text=True, timeout=3.0)
+                state = "on" if res.stdout.strip() == "1" else "off"
+                return {"status": "success", "feature": "bluetooth", "power": state}
+            except Exception:
+                pass
+        return {"status": "unknown", "feature": "bluetooth", "message": "Bluetooth status unknown"}
+    return {"status": "error", "message": f"Unknown Bluetooth action: {action}"}
+
+def _get_wifi_interface() -> str:
     try:
-        if action_lower in ["volume_up", "louder"]:
-            subprocess.run(["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) + 12)"])
-            return {"status": "success", "message": "Increased volume"}
-        elif action_lower in ["volume_down", "quieter", "lower"]:
-            subprocess.run(["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) - 12)"])
-            return {"status": "success", "message": "Decreased volume"}
-        elif action_lower in ["mute"]:
-            subprocess.run(["osascript", "-e", "set volume output muted true"])
-            return {"status": "success", "message": "Muted audio"}
-        elif action_lower in ["unmute"]:
-            subprocess.run(["osascript", "-e", "set volume output muted false"])
-            return {"status": "success", "message": "Unmuted audio"}
-        elif action_lower in ["play_pause", "play", "pause"]:
-            # Intelligently toggle Spotify if active, or fall back to Apple Music
-            if ensure_spotify_running(timeout=0.5):
-                return spotify_control("pause" if action_lower == "pause" else ("play" if action_lower == "play" else "play_pause"))
-            subprocess.run(["osascript", "-e", 'tell application "Music" to playpause'])
-            return {"status": "success", "message": "Toggled music playback"}
-        elif action_lower in ["battery", "battery_status"]:
-            res = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True)
-            output = res.stdout.strip()
-            match = re.search(r'(\d+)%', output)
-            batt_pct = match.group(1) if match else "unknown"
-            charging = "charging" in output or "AC Power" in output
-            return {"status": "success", "battery_percentage": batt_pct, "is_charging": charging, "raw": output}
-        elif action_lower in ["time", "current_time"]:
-            return get_current_time()
-        else:
-            return {"status": "unknown_action", "action": action}
+        res = subprocess.run(["networksetup", "-listallhardwareports"], capture_output=True, text=True)
+        lines = res.stdout.splitlines()
+        for i, line in enumerate(lines):
+            if "Hardware Port: Wi-Fi" in line and i + 1 < len(lines):
+                dev_line = lines[i+1]
+                if "Device:" in dev_line:
+                    return dev_line.split(":")[1].strip()
+    except Exception:
+        pass
+    return "en0"
+
+def _control_wifi(action: str, value: Optional[str] = None) -> Dict[str, Any]:
+    iface = _get_wifi_interface()
+    if action in ["on", "enable", "1", "true"]:
+        res = subprocess.run(["networksetup", "-setairportpower", iface, "on"], capture_output=True, text=True)
+        if res.returncode == 0:
+            return {"status": "success", "feature": "wifi", "power": "on", "interface": iface, "message": f"Wi-Fi turned ON ({iface})"}
+        return {"status": "error", "message": f"Failed to turn on Wi-Fi: {res.stderr}"}
+    elif action in ["off", "disable", "0", "false"]:
+        res = subprocess.run(["networksetup", "-setairportpower", iface, "off"], capture_output=True, text=True)
+        if res.returncode == 0:
+            return {"status": "success", "feature": "wifi", "power": "off", "interface": iface, "message": f"Wi-Fi turned OFF ({iface})"}
+        return {"status": "error", "message": f"Failed to turn off Wi-Fi: {res.stderr}"}
+    elif action in ["toggle"]:
+        status_res = subprocess.run(["networksetup", "-getairportpower", iface], capture_output=True, text=True)
+        is_on = "on" in status_res.stdout.lower()
+        new_power = "off" if is_on else "on"
+        subprocess.run(["networksetup", "-setairportpower", iface, new_power])
+        return {"status": "success", "feature": "wifi", "power": new_power, "interface": iface, "message": f"Wi-Fi toggled to {new_power.upper()} ({iface})"}
+    elif action in ["status", "query", "get"]:
+        res = subprocess.run(["networksetup", "-getairportpower", iface], capture_output=True, text=True)
+        power = "on" if "on" in res.stdout.lower() else "off"
+        return {"status": "success", "feature": "wifi", "power": power, "interface": iface, "raw": res.stdout.strip()}
+    return {"status": "error", "message": f"Unknown Wi-Fi action: {action}"}
+
+def _control_airdrop(action: str, value: Optional[str] = None) -> Dict[str, Any]:
+    if action in ["off", "disable", "0", "false"]:
+        subprocess.run(["defaults", "write", "com.apple.sharingd", "DiscoverableMode", "-string", "Off"])
+        subprocess.run(["killall", "-HUP", "sharingd"], capture_output=True)
+        return {"status": "success", "feature": "airdrop", "mode": "Off", "message": "AirDrop turned OFF"}
+    elif action in ["on", "enable", "1", "true", "everyone", "contacts", "contacts_only"]:
+        mode = "Contacts Only" if action in ["contacts", "contacts_only"] or (value and "contact" in value.lower()) else "Everyone"
+        subprocess.run(["defaults", "write", "com.apple.sharingd", "DiscoverableMode", "-string", mode])
+        subprocess.run(["killall", "-HUP", "sharingd"], capture_output=True)
+        return {"status": "success", "feature": "airdrop", "mode": mode, "message": f"AirDrop turned ON ({mode})"}
+    elif action in ["toggle"]:
+        res = subprocess.run(["defaults", "read", "com.apple.sharingd", "DiscoverableMode"], capture_output=True, text=True)
+        curr = res.stdout.strip()
+        new_mode = "Off" if curr in ["Everyone", "Contacts Only"] else "Everyone"
+        subprocess.run(["defaults", "write", "com.apple.sharingd", "DiscoverableMode", "-string", new_mode])
+        subprocess.run(["killall", "-HUP", "sharingd"], capture_output=True)
+        return {"status": "success", "feature": "airdrop", "mode": new_mode, "message": f"AirDrop toggled to {new_mode}"}
+    elif action in ["status", "query", "get"]:
+        res = subprocess.run(["defaults", "read", "com.apple.sharingd", "DiscoverableMode"], capture_output=True, text=True)
+        mode = res.stdout.strip() or "Off"
+        return {"status": "success", "feature": "airdrop", "mode": mode}
+    return {"status": "error", "message": f"Unknown AirDrop action: {action}"}
+
+def _control_volume(action: str, value: Optional[str] = None) -> Dict[str, Any]:
+    if action in ["up", "increase", "louder", "raise", "volume_up"]:
+        delta = 12
+        if value:
+            try: delta = int(re.sub(r'[^\d]', '', str(value)))
+            except Exception: delta = 12
+        subprocess.run(["osascript", "-e", f"set volume output volume ((output volume of (get volume settings)) + {delta})"])
+        res = subprocess.run(["osascript", "-e", "output volume of (get volume settings)"], capture_output=True, text=True)
+        curr = res.stdout.strip()
+        return {"status": "success", "feature": "volume", "volume": curr, "message": f"Volume increased to {curr}%"}
+    elif action in ["down", "decrease", "quieter", "lower", "volume_down"]:
+        delta = 12
+        if value:
+            try: delta = int(re.sub(r'[^\d]', '', str(value)))
+            except Exception: delta = 12
+        subprocess.run(["osascript", "-e", f"set volume output volume ((output volume of (get volume settings)) - {delta})"])
+        res = subprocess.run(["osascript", "-e", "output volume of (get volume settings)"], capture_output=True, text=True)
+        curr = res.stdout.strip()
+        return {"status": "success", "feature": "volume", "volume": curr, "message": f"Volume decreased to {curr}%"}
+    elif action in ["set", "set_volume", "to"]:
+        target = 50
+        if value:
+            try: target = max(0, min(100, int(re.sub(r'[^\d]', '', str(value)))))
+            except Exception: target = 50
+        subprocess.run(["osascript", "-e", f"set volume output volume {target}"])
+        return {"status": "success", "feature": "volume", "volume": str(target), "message": f"Volume set to {target}%"}
+    elif action in ["mute"]:
+        subprocess.run(["osascript", "-e", "set volume output muted true"])
+        return {"status": "success", "feature": "volume", "muted": True, "message": "Audio muted"}
+    elif action in ["unmute"]:
+        subprocess.run(["osascript", "-e", "set volume output muted false"])
+        return {"status": "success", "feature": "volume", "muted": False, "message": "Audio unmuted"}
+    elif action in ["status", "query", "get"]:
+        res = subprocess.run(["osascript", "-e", "output volume of (get volume settings)"], capture_output=True, text=True)
+        curr = res.stdout.strip()
+        mute_res = subprocess.run(["osascript", "-e", "output muted of (get volume settings)"], capture_output=True, text=True)
+        muted = "true" in mute_res.stdout.lower()
+        return {"status": "success", "feature": "volume", "volume": curr, "muted": muted}
+    return {"status": "error", "message": f"Unknown volume action: {action}"}
+
+def _control_brightness(action: str, value: Optional[str] = None) -> Dict[str, Any]:
+    try:
+        import Quartz
+        dls = ctypes.cdll.LoadLibrary("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices")
+        get_b = dls.DisplayServicesGetBrightness
+        set_b = dls.DisplayServicesSetBrightness
+        get_b.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_float)]
+        get_b.restype = ctypes.c_int
+        set_b.argtypes = [ctypes.c_uint32, ctypes.c_float]
+        set_b.restype = ctypes.c_int
+        main_disp = Quartz.CGMainDisplayID()
+
+        curr_f = ctypes.c_float()
+        get_b(main_disp, ctypes.byref(curr_f))
+        curr_val = curr_f.value
+
+        if action in ["up", "increase", "raise", "brighter", "brightness_up"]:
+            delta = 0.12
+            if value:
+                try: delta = int(re.sub(r'[^\d]', '', str(value))) / 100.0
+                except Exception: delta = 0.12
+            new_val = max(0.0, min(1.0, curr_val + delta))
+            set_b(main_disp, ctypes.c_float(new_val))
+            pct = int(round(new_val * 100))
+            return {"status": "success", "feature": "brightness", "brightness": f"{pct}%", "message": f"Brightness increased to {pct}%"}
+
+        elif action in ["down", "decrease", "lower", "dimmer", "dim", "brightness_down"]:
+            delta = 0.12
+            if value:
+                try: delta = int(re.sub(r'[^\d]', '', str(value))) / 100.0
+                except Exception: delta = 0.12
+            new_val = max(0.0, min(1.0, curr_val - delta))
+            set_b(main_disp, ctypes.c_float(new_val))
+            pct = int(round(new_val * 100))
+            return {"status": "success", "feature": "brightness", "brightness": f"{pct}%", "message": f"Brightness decreased to {pct}%"}
+
+        elif action in ["set", "set_brightness", "to"]:
+            target_pct = 50
+            if value:
+                try: target_pct = max(0, min(100, int(re.sub(r'[^\d]', '', str(value)))))
+                except Exception: target_pct = 50
+            new_val = target_pct / 100.0
+            set_b(main_disp, ctypes.c_float(new_val))
+            return {"status": "success", "feature": "brightness", "brightness": f"{target_pct}%", "message": f"Brightness set to {target_pct}%"}
+
+        elif action in ["status", "query", "get"]:
+            pct = int(round(curr_val * 100))
+            return {"status": "success", "feature": "brightness", "brightness": f"{pct}%"}
+
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        if action in ["up", "increase", "brighter"]:
+            subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 144'])
+            return {"status": "success", "feature": "brightness", "message": "Increased display brightness"}
+        elif action in ["down", "decrease", "dimmer"]:
+            subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 145'])
+            return {"status": "success", "feature": "brightness", "message": "Decreased display brightness"}
+        return {"status": "error", "message": f"Failed to control brightness: {e}"}
+
+    return {"status": "error", "message": f"Unknown brightness action: {action}"}
+
+def system_control(action: str, feature: Optional[str] = None, value: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+    """Controls macOS hardware and system settings: Bluetooth, Wi-Fi, AirDrop, Volume, Brightness, Media, Battery, Time."""
+    act = (action or "").strip().lower()
+    feat = (feature or "").strip().lower()
+    val = value or kwargs.get("val") or kwargs.get("level") or kwargs.get("amount")
+
+    # If action is composite like "bluetooth_on", "wifi_off", "brightness_up", "volume_down"
+    for prefix, inferred_feat in [
+        ("bluetooth_", "bluetooth"),
+        ("bt_", "bluetooth"),
+        ("wifi_", "wifi"),
+        ("wi_fi_", "wifi"),
+        ("airdrop_", "airdrop"),
+        ("volume_", "volume"),
+        ("vol_", "volume"),
+        ("brightness_", "brightness"),
+        ("display_", "brightness"),
+    ]:
+        if act.startswith(prefix):
+            feat = inferred_feat
+            act = act[len(prefix):]
+            break
+
+    # If feature was passed or inferred:
+    if feat in ["bluetooth", "bt"]:
+        return _control_bluetooth(act, val)
+    elif feat in ["wifi", "wi-fi", "wi_fi", "airport", "wlan"]:
+        return _control_wifi(act, val)
+    elif feat in ["airdrop", "air_drop"]:
+        return _control_airdrop(act, val)
+    elif feat in ["volume", "sound", "audio"]:
+        return _control_volume(act, val)
+    elif feat in ["brightness", "display", "screen"]:
+        return _control_brightness(act, val)
+
+    # Legacy or direct action mappings
+    if act in ["volume_up", "louder"]:
+        return _control_volume("up", val)
+    elif act in ["volume_down", "quieter", "lower"]:
+        return _control_volume("down", val)
+    elif act in ["mute"]:
+        return _control_volume("mute", val)
+    elif act in ["unmute"]:
+        return _control_volume("unmute", val)
+    elif act in ["bluetooth_on", "bt_on"]:
+        return _control_bluetooth("on", val)
+    elif act in ["bluetooth_off", "bt_off"]:
+        return _control_bluetooth("off", val)
+    elif act in ["wifi_on"]:
+        return _control_wifi("on", val)
+    elif act in ["wifi_off"]:
+        return _control_wifi("off", val)
+    elif act in ["airdrop_on"]:
+        return _control_airdrop("on", val)
+    elif act in ["airdrop_off"]:
+        return _control_airdrop("off", val)
+    elif act in ["brightness_up", "brighter"]:
+        return _control_brightness("up", val)
+    elif act in ["brightness_down", "dimmer"]:
+        return _control_brightness("down", val)
+    elif act in ["play_pause", "play", "pause"]:
+        if ensure_spotify_running(timeout=0.5):
+            return spotify_control("pause" if act == "pause" else ("play" if act == "play" else "play_pause"))
+        subprocess.run(["osascript", "-e", 'tell application "Music" to playpause'])
+        return {"status": "success", "message": "Toggled music playback"}
+    elif act in ["battery", "battery_status"]:
+        res = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True)
+        output = res.stdout.strip()
+        match = re.search(r'(\d+)%', output)
+        batt_pct = match.group(1) if match else "unknown"
+        charging = "charging" in output or "AC Power" in output
+        return {"status": "success", "battery_percentage": batt_pct, "is_charging": charging, "raw": output}
+    elif act in ["time", "current_time"]:
+        return get_current_time()
+
+    return {"status": "error", "message": f"Unknown system control action '{action}' on feature '{feature}'"}
 
 SPOTIFY_CLI_PATH = "/Applications/Spotify.app/Contents/MacOS/spotify_cli"
 
@@ -2417,13 +2696,32 @@ def get_jarvis_tools() -> list[types.Tool]:
         ),
         types.FunctionDeclaration(
             name="system_control",
-            description="Controls macOS system settings: volume (volume_up, volume_down, mute, unmute), media (play_pause), battery level, or current time.",
+            description=(
+                "Controls macOS system hardware and settings: "
+                "Bluetooth (turn on, turn off, toggle, query status), "
+                "Wi-Fi (turn on, turn off, toggle, query status), "
+                "AirDrop (turn on, turn off, toggle, query status), "
+                "Volume (increase, decrease, set specific 0-100% level, mute, unmute), "
+                "Display Brightness (increase, decrease, set specific 0-100% level, query status), "
+                "Media playback (play, pause, play_pause), "
+                "Battery status, and current time. "
+                "Call this tool IMMEDIATELY whenever the user asks to turn on/off Bluetooth, Wi-Fi, or AirDrop, "
+                "or adjust/change volume or screen brightness."
+            ),
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
+                    "feature": types.Schema(
+                        type="STRING",
+                        description="Hardware feature to control: 'bluetooth', 'wifi', 'airdrop', 'volume', 'brightness', 'media', 'battery', or 'time'."
+                    ),
                     "action": types.Schema(
                         type="STRING",
-                        description="'volume_up', 'volume_down', 'mute', 'unmute', 'play_pause', 'battery', or 'time'."
+                        description="Action to perform: 'on', 'off', 'toggle', 'up', 'down', 'set', 'mute', 'unmute', or 'status'. Can also be composite like 'bluetooth_on', 'wifi_off', 'volume_up', 'brightness_down'."
+                    ),
+                    "value": types.Schema(
+                        type="STRING",
+                        description="Optional numeric percentage (e.g. '50' for 50% volume/brightness, '80' for 80%) or mode ('everyone', 'contacts_only')."
                     )
                 },
                 required=["action"]

@@ -1,6 +1,7 @@
 import queue
 import threading
 import time
+from collections import deque
 import numpy as np
 import sounddevice as sd
 from config import config
@@ -31,8 +32,8 @@ class AudioManager:
         # Recording state
         self._recording = False
         self._record_buffer = []
-        self._preroll_buffer = []  # Ring buffer of recent mic chunks
         self._preroll_max = 40     # ~2.56s of audio history for seamless command capture
+        self._preroll_buffer = deque(maxlen=self._preroll_max)  # Ring buffer of recent mic chunks
         self._record_lock = threading.Lock()
         self.current_rms = 0.0
 
@@ -105,9 +106,6 @@ class AudioManager:
 
         with self._record_lock:
             self._preroll_buffer.append(chunk)
-            if len(self._preroll_buffer) > self._preroll_max:
-                self._preroll_buffer.pop(0)
-
             if self._recording:
                 self._record_buffer.append(chunk)
 

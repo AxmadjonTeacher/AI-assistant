@@ -13,9 +13,17 @@ os.makedirs(LOG_DIR, exist_ok=True)
 SWAN_LOG_FILE = os.path.join(LOG_DIR, "Swan.log")
 
 class TeeStream:
+    _shared_file = None
+    _lock = threading.Lock()
+
     def __init__(self, original_stream, file_path):
         self.orig = original_stream
         self.file_path = file_path
+        if TeeStream._shared_file is None:
+            try:
+                TeeStream._shared_file = open(self.file_path, "a", encoding="utf-8", buffering=1)
+            except Exception:
+                pass
 
     def write(self, data):
         if self.orig:
@@ -23,16 +31,23 @@ class TeeStream:
                 self.orig.write(data)
             except Exception:
                 pass
-        try:
-            with open(self.file_path, "a", encoding="utf-8") as f:
-                f.write(data)
-        except Exception:
-            pass
+        if TeeStream._shared_file:
+            try:
+                with TeeStream._lock:
+                    TeeStream._shared_file.write(data)
+            except Exception:
+                pass
 
     def flush(self):
         if self.orig:
             try:
                 self.orig.flush()
+            except Exception:
+                pass
+        if TeeStream._shared_file:
+            try:
+                with TeeStream._lock:
+                    TeeStream._shared_file.flush()
             except Exception:
                 pass
 
@@ -114,6 +129,7 @@ from gemini_client import GeminiLiveClient
 from tools import set_mode_callback, set_dismiss_callback, set_language_callback
 from hud_window import LiquidHUDWindow
 from agent_hud import init_agent_hud
+from state_machine import AssistantStateMachine, AssistantState
 from menu_bar import SwanMenuBar
 from settings_window import SettingsWindow
 from wake_word_detector import WakeWordDetector
@@ -130,7 +146,7 @@ class SwanApp:
         self.cocoa_app.setDelegate_(self.app_delegate)
         self.cocoa_app.finishLaunching()
 
-        # 2. UI Components
+        # 2. UI Components & State Machine
         self.settings_window = SettingsWindow(
             on_mode_toggle=self._toggle_mode,
             on_mode_change=self._handle_mode_change,
@@ -142,6 +158,8 @@ class SwanApp:
             on_quit=self._quit
         )
         self.hud = LiquidHUDWindow()
+        self.state_machine = AssistantStateMachine()
+        self.state_machine.add_listener(self._on_state_machine_update)
         self.agent_hud = init_agent_hud()
         self.menu_bar = SwanMenuBar(
             on_ask_swan=self.trigger_assistant,
@@ -155,9 +173,18 @@ class SwanApp:
             on_quit=self._quit
         )
 
-        # Greet on launch so user visually sees the liquid pill immediately
-        AppHelper.callLater(0.5, lambda: self.hud.show(state="wake", status="SWAN", subtitle="Tayyorman, Janob"))
-        AppHelper.callLater(2.8, lambda: self.hud.hide())
+        # Greet on launch so user visually sees the notch HUD immediately
+        AppHelper.callLater(0.5, lambda: (self.state_machine.on_wake("Tayyorman, Janob"), self.hud.show(state="wake", status="SWAN", subtitle="Tayyorman, Janob")))
+        AppHelper.callLater(2.8, lambda: (self.state_machine.on_idle(), self.hud.hide()))
+
+    def _on_state_machine_update(self, state: AssistantState, label: str, detail: str):
+        """Dispatches state machine updates to both the notch HUD and menu bar."""
+        try:
+            self.hud.set_state(state.value, status=state.value.upper(), subtitle=label)
+            if not self._interrupted:
+                self.menu_bar.set_status(f"Swan: {label}")
+        except Exception as e:
+            print(f"⚠️ [HUD State Dispatch Error]: {e}", flush=True)
 
         # 3. Audio & AI Core
         self.audio_manager = AudioManager()
@@ -305,8 +332,7 @@ class SwanApp:
         # 2. Regular Interruption: stop audio playback immediately and transition to listening for user follow-up
         self._interrupted = True
         self.audio_manager.interrupt_playback()
-        self.hud.set_state("listening", "LISTENING", "Listening...")
-        self.menu_bar.set_status("Listening...")
+        self.state_machine.on_listening("Listening...")
 
         # Immediately abort in-flight Gemini streaming task so assistant transitions to listening without delay
         if self._current_client_turn_task and not self._current_client_turn_task.done() and self._loop and self._loop.is_running():
@@ -329,7 +355,8 @@ class SwanApp:
         if self._active_turn_future and not self._active_turn_future.done():
             self._active_turn_future.cancel()
 
-        # 4. Hide HUD with zero delay
+        # 4. Hide notch HUD and transition state to idle
+        self.state_machine.on_idle()
         self.hud.hide(delay=0.0)
 
         # 5. Reset menu bar status
@@ -419,6 +446,7 @@ class SwanApp:
         if not self._running:
             return
         if self._busy:
+            self.state_machine.on_speaking(self._active_action or "Gapirmoqda...")
             self.hud.show(state="speaking", status="SWAN", subtitle=self._active_action or "Gapirmoqda...")
             return
 
@@ -589,8 +617,14 @@ class SwanApp:
             t_lang = args.get("target_language", "English").strip().title()
             return f"Switching Language to {t_lang}..."
         elif name == "system_control":
+            feat = args.get("feature", "").strip().title()
             act = args.get("action", "").replace("_", " ").strip().title()
-            return f"Adjusting {act}..."
+            val = args.get("value", "")
+            if feat:
+                if val:
+                    return f"{feat}: {act} ({val})..."
+                return f"{feat}: {act}..."
+            return f"{act}..."
         elif name == "get_current_time":
             return "Checking Local Time..."
         elif name in ["spotify_control", "play_music", "control_spotify"]:
@@ -665,8 +699,7 @@ class SwanApp:
         action_label = self._format_action_label(name, args)
         self._active_action = action_label
         print(f"⚙️ [Action Display] {action_label}", flush=True)
-        self.hud.set_state("speaking", "ACTION", action_label)
-        self.menu_bar.set_status(f"Action: {action_label}")
+        self.state_machine.on_action(action_label)
 
     def _handle_tool_executed(self, name: str, args: dict, result: dict):
         if name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
@@ -674,8 +707,7 @@ class SwanApp:
             return
         action_label = self._format_action_label(name, args)
         self._active_action = action_label
-        self.hud.set_state("speaking", "ACTION", action_label)
-        self.menu_bar.set_status(f"Action: {action_label}")
+        self.state_machine.on_action(action_label)
         if name in ["spotify_control", "system_control"]:
             act = str((args or {}).get("action", "")).lower()
             if act in ["pause", "stop"]:
@@ -721,6 +753,7 @@ class SwanApp:
             if has_immediate_command:
                 # User spoke command together with wake word ("Swan, open Safari")!
                 print(f"⚡ [Immediate Command Mode] Continuous command detected. Streaming immediately.", flush=True)
+                self.state_machine.on_listening("Listening...")
                 self.hud.show(state="listening", status="LISTENING", subtitle="Listening...")
             else:
                 # 1. Random voice prompt matching selected language, voice model and respectful preference
@@ -733,7 +766,8 @@ class SwanApp:
                 self._active_action = ""
                 print(f"🎙️ [Wake Word Detected] Acknowledging with: '{label}'", flush=True)
 
-                # 2. Show top liquid bar immediately
+                # 2. Show top notch bar immediately
+                self.state_machine.on_wake(label)
                 self.hud.show(state="wake", status="SWAN", subtitle=label)
 
                 # 3. Play voice acknowledgment (trimmed, crisp ~1.0s)
@@ -763,26 +797,22 @@ class SwanApp:
                 if was_interrupted:
                     # User interrupted Swan! Active listening with crisp 3.5s timeout
                     await asyncio.sleep(0.20)  # Let interruption utterance and echo clear
-                    self.hud.set_state("listening", "LISTENING", "Listening...")
-                    self.menu_bar.set_status("Listening...")
+                    self.state_machine.on_listening("Listening...")
                     turn_timeout = 3.5
                 elif turn_number > 1:
                     # Check if Gemini asked a clarifying question or ended with a question
                     is_question = "?" in last_reply or any(w in last_reply.lower() for w in ["what", "which", "how", "could you", "would you", "tell me", "please tell"])
                     if is_question:
-                        self.hud.set_state("listening", "LISTENING", "Listening for reply...")
-                        self.menu_bar.set_status("Listening for reply...")
+                        self.state_machine.on_listening("Listening for reply...")
                         turn_timeout = 6.5  # Ample time for user to think and answer Gemini's question
                     elif not last_reply:
-                        self.hud.set_state("listening", "LISTENING", "Listening...")
-                        self.menu_bar.set_status("Listening...")
+                        self.state_machine.on_listening("Listening...")
                         turn_timeout = 5.0
                     else:
-                        self.hud.set_state("listening", "LISTENING", "Listening for follow-up...")
-                        self.menu_bar.set_status("Listening for follow-up...")
+                        self.state_machine.on_listening("Listening for follow-up...")
                         turn_timeout = 4.0
                 else:
-                    self.hud.set_state("listening", "LISTENING", "Listening...")
+                    self.state_machine.on_listening("Listening...")
                     turn_timeout = 5.5
 
                 # Record user speech with adaptive pause detection
@@ -828,8 +858,8 @@ class SwanApp:
 
             # Auto-hide HUD when conversation ends
             if not self._cancel_requested:
+                self.state_machine.on_idle()
                 self.hud.hide(delay=0.35)
-                self.menu_bar.set_status("Ready (Listening for 'Hey Swan')")
 
         except asyncio.CancelledError:
             print("🛑 [Wake Cycle] Task cancelled cleanly.", flush=True)
@@ -900,11 +930,11 @@ class SwanApp:
                 if speech_started:
                     speech_len = last_speech_time - speech_start_time
                     if speech_len < 1.0:
-                        effective_pause = 1.15 # Room for natural pauses after wake word
+                        effective_pause = 0.80 # Snappy for short commands ("Bluetooth-ni yoq")
                     elif speech_len < 3.5:
-                        effective_pause = 0.80 # Snappy responsive trigger
+                        effective_pause = 0.75 # Snappy responsive trigger
                     else:
-                        effective_pause = 0.90
+                        effective_pause = 0.85
                     if time.time() - last_speech_time > effective_pause:
                         if speech_len < 0.35:
                             # False start / breath / click / mic tap - reset and keep waiting for real speech
@@ -945,7 +975,7 @@ class SwanApp:
             self._active_prompt_label = "Eshtaman"
         self._hotkey_recording_start = time.time()
         self.audio_manager.start_recording()
-        self.menu_bar.set_status("Tinglanmoqda (Hotkey)...")
+        self.state_machine.on_listening("Gapiring...")
         self.hud.show(state="listening", status="LISTENING", subtitle="Gapiring...")
 
     def _on_hotkey_release(self):
@@ -957,8 +987,8 @@ class SwanApp:
         print(f"⌨️ [Hotkey release] duration={duration:.2f}s, pcm_len={len(pcm)}, has_speech={self.audio_manager.has_speech(pcm)}", flush=True)
 
         if duration < config.min_recording_seconds or len(pcm) < 3200 or not self.audio_manager.has_speech(pcm):
+            self.state_machine.on_idle()
             self.hud.hide(delay=0.2)
-            self.menu_bar.set_status("Ready (Listening for 'Hey Swan')")
             self.wake_detector.reset()
             self.wake_detector.enabled = True
             return
@@ -983,7 +1013,7 @@ class SwanApp:
             # If Gemini asked a question, listen for the follow-up answer hands-free!
             is_question = reply and ("?" in reply or any(w in reply.lower() for w in ["what", "which", "how", "could you", "would you", "tell me", "please tell"]))
             if is_question and not self._cancel_requested and not self._interrupted:
-                self.hud.set_state("listening", "LISTENING", "Listening for reply...")
+                self.state_machine.on_listening("Listening for reply...")
                 followup_pcm, live_speech = await self._listen_for_speech(initial_timeout=6.5, max_duration=12.0)
                 if not self._cancel_requested and not self._interrupted and live_speech and followup_pcm and self.audio_manager.has_speech(followup_pcm, energy_threshold=0.013, min_speech_duration=0.18):
                     await self._process_gemini_turn(followup_pcm)
@@ -992,8 +1022,8 @@ class SwanApp:
                     await asyncio.sleep(0.08)
 
             if not self._cancel_requested and not self._interrupted:
+                self.state_machine.on_idle()
                 self.hud.hide(delay=0.4)
-                self.menu_bar.set_status("Ready (Listening for 'Hey Swan')")
 
         except asyncio.CancelledError:
             print("🛑 [Hotkey Turn] Task cancelled cleanly.", flush=True)
@@ -1008,8 +1038,7 @@ class SwanApp:
         try:
             self._interrupted = False
             self.wake_detector.reset_interruption()
-            self.hud.set_state("thinking", "THINKING", "Processing...")
-            self.menu_bar.set_status("Thinking...")
+            self.state_machine.on_thinking()
             self._active_transcript = ""
             self._active_action = ""
             has_first_audio = False
@@ -1021,15 +1050,14 @@ class SwanApp:
                 if not has_first_audio:
                     has_first_audio = True
                     # Only show the action if an action took place, otherwise show the acknowledgment label.
-                    # Strictly do NOT show raw transcription text in the liquid pill HUD!
+                    # Strictly do NOT show raw transcription text in the notch HUD!
                     display_text = self._active_action if self._active_action else self._active_prompt_label
-                    display_status = "ACTION" if self._active_action else "SWAN"
-                    self.hud.set_state("speaking", display_status, display_text)
+                    self.state_machine.on_speaking(display_text)
                 self.audio_manager.play_audio_chunk(chunk)
 
             def on_transcript_chunk(text: str):
                 self._active_transcript += text
-                # We strictly do NOT put streaming transcription text into the liquid pill HUD!
+                # We strictly do NOT put streaming transcription text into the notch HUD!
                 if not self._active_action and not self._interrupted:
                     self.menu_bar.set_status("Swan: Speaking...")
 
@@ -1079,7 +1107,7 @@ class SwanApp:
 
         except Exception as e:
             print(f"❌ [ERROR] Turn execution error: {e}", flush=True)
-            self.hud.set_state("thinking", "ERROR", str(e)[:30])
+            self.state_machine.on_error(str(e))
             if self.client:
                 asyncio.create_task(self.client.ensure_active_session())
             await asyncio.sleep(1.5)

@@ -210,7 +210,10 @@ class WakeWordDetector:
                         self._handle_trigger(suffix)
                         return
                 else:
-                    partial = json.loads(self.recognizer.PartialResult())
+                    raw_partial = self.recognizer.PartialResult()
+                    if not raw_partial or '"partial" : ""' in raw_partial or len(raw_partial) <= 22:
+                        return
+                    partial = json.loads(raw_partial)
                     partial_text = partial.get("partial", "").lower()
                     if partial_text:
                         matched, token, suffix = self._match_wake_word(partial_text, is_final=False)
@@ -315,7 +318,10 @@ class WakeWordDetector:
                         is_dismiss = dismiss_flag
                         reason = f"Keyword detected: '{token}' in '{text}'"
                 else:
-                    partial = json.loads(self.interruption_recognizer.PartialResult())
+                    raw_partial = self.interruption_recognizer.PartialResult()
+                    if not raw_partial or '"partial" : ""' in raw_partial or len(raw_partial) <= 22:
+                        return
+                    partial = json.loads(raw_partial)
                     p_text = partial.get("partial", "").lower().strip()
                     if p_text:
                         matched, token, dismiss_flag = _check_text(p_text)

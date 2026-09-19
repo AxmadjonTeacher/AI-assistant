@@ -52,24 +52,27 @@ class LiquidHUDWindow:
         self._init_window()
 
     def _update_frame_for_current_screen(self):
-        mouse_loc = NSEvent.mouseLocation()
-        target_screen = None
-        for s in NSScreen.screens():
-            if NSPointInRect(mouse_loc, s.frame()):
-                target_screen = s
-                break
+        # Anchor to the active focused screen with keyboard focus, falling back to mouse screen or primary
+        target_screen = NSScreen.mainScreen()
         if not target_screen:
-            target_screen = NSScreen.mainScreen() or (NSScreen.screens()[0] if NSScreen.screens() else None)
+            mouse_loc = NSEvent.mouseLocation()
+            for s in NSScreen.screens():
+                if NSPointInRect(mouse_loc, s.frame()):
+                    target_screen = s
+                    break
+        if not target_screen:
+            target_screen = NSScreen.screens()[0] if NSScreen.screens() else None
+
         screen_frame = target_screen.frame() if target_screen else NSRect(NSPoint(0, 0), NSSize(1440, 900))
-        win_w = 460
-        win_h = 88
+        win_w = 480
+        win_h = 72
         x = screen_frame.origin.x + (screen_frame.size.width - win_w) / 2.0
-        y = screen_frame.origin.y + screen_frame.size.height - win_h - 22.0
+        y = screen_frame.origin.y + screen_frame.size.height - win_h
         self._on_screen_frame = NSRect(NSPoint(x, y), NSSize(win_w, win_h))
 
     def _init_window(self):
-        win_w = 460
-        win_h = 88
+        win_w = 480
+        win_h = 72
         self._update_frame_for_current_screen()
 
         # Borderless non-activating panel
@@ -119,7 +122,7 @@ class LiquidHUDWindow:
             base_dir_url = NSURL.fileURLWithPath_(os.path.dirname(resolved_path))
             self.webview.loadHTMLString_baseURL_(html_content, base_dir_url)
         except Exception as e:
-            print(f"[ERROR] Loading HUD template string from {resolved_path}: {e}")
+            print(f"[ERROR] Loading HUD template string from {resolved_path}: {e}", flush=True)
 
         self.panel.setContentView_(self.webview)
         self.panel.orderOut_(None)
@@ -137,31 +140,38 @@ class LiquidHUDWindow:
                 self._pending_evals.append(js_code)
             if self.webview:
                 self.webview.evaluateJavaScript_completionHandler_(js_code, None)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[HUD JS ERROR]: {e}", flush=True)
 
     def show(self, state: str = "wake", status: str = "SWAN", subtitle: str = "Listening"):
-        self._show_token += 1
-        AppHelper.callAfter(self._main_show, self._show_token, state, status, subtitle)
+        with self._lock:
+            self._show_token += 1
+            token = self._show_token
+            self._is_visible = True
+        AppHelper.callAfter(self._main_show, token, state, status, subtitle)
 
     def _main_show(self, token: int, state: str, status: str, subtitle: str):
         with self._lock:
+            if token != self._show_token:
+                return
             self._is_visible = True
 
         try:
             # Dynamically place on current focused screen and show on top of all windows
             self._update_frame_for_current_screen()
             self.panel.setFrame_display_(self._on_screen_frame, True)
+            self.panel.setAlphaValue_(1.0)
             self.panel.orderFrontRegardless()
             state_json = json.dumps(state or "wake")
             st_json = json.dumps(status or "SWAN")
             sub_json = json.dumps(subtitle or "")
             self._eval_js(f"window.showHUD({state_json}, {st_json}, {sub_json});")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[HUD ERROR in _main_show]: {e}", flush=True)
 
     def hide(self, delay: float = 0.0):
-        token = self._show_token
+        with self._lock:
+            token = self._show_token
         if delay <= 0:
             AppHelper.callAfter(self._main_do_hide, token)
         else:
@@ -186,16 +196,33 @@ class LiquidHUDWindow:
                 self.panel.orderOut_(None)
 
     def set_state(self, state: str, status: Optional[str] = None, subtitle: Optional[str] = None):
-        AppHelper.callAfter(self._main_set_state, state, status, subtitle)
+        with self._lock:
+            if state in ["wake", "listening", "thinking", "action", "speaking", "error"]:
+                self._is_visible = True
+                self._show_token += 1
+            token = self._show_token
+        AppHelper.callAfter(self._main_set_state, token, state, status, subtitle)
 
-    def _main_set_state(self, state: str, status: Optional[str], subtitle: Optional[str]):
+    def _main_set_state(self, token: int, state: str, status: Optional[str], subtitle: Optional[str]):
+        with self._lock:
+            if state in ["wake", "listening", "thinking", "action", "speaking", "error"]:
+                if token != self._show_token:
+                    return
+                self._is_visible = True
+
         try:
+            if state in ["wake", "listening", "thinking", "action", "speaking", "error"]:
+                self._update_frame_for_current_screen()
+                self.panel.setFrame_display_(self._on_screen_frame, True)
+                self.panel.setAlphaValue_(1.0)
+                self.panel.orderFrontRegardless()
+
             state_json = json.dumps(state or "wake")
             st_arg = json.dumps(status) if status is not None else "null"
             sub_arg = json.dumps(subtitle) if subtitle is not None else "null"
             self._eval_js(f"window.setState({state_json}, {st_arg}, {sub_arg});")
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[HUD ERROR in _main_set_state]: {e}", flush=True)
 
     def set_audio_energy(self, energy: float):
         AppHelper.callAfter(self._main_set_audio_energy, energy)
