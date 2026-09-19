@@ -387,6 +387,11 @@
 
   function setState(state, statusStr, subtitleStr) {
     currentState = state;
+    if (state === 'idle') {
+      hud.classList.remove('visible');
+      hud.className = 'hud-wrapper state-idle';
+      return;
+    }
     hud.className = 'hud-wrapper visible state-' + state;
 
     // Prefer specific action/status text if passed, else fallback
@@ -403,13 +408,16 @@
   }
 
   function showHUD(state, statusStr, subtitleStr) {
+    if (state === 'idle') return;
     resize();
     setState(state, statusStr, subtitleStr);
     hud.classList.add('visible');
   }
 
   function hideHUD() {
+    currentState = 'idle';
     hud.classList.remove('visible');
+    hud.className = 'hud-wrapper state-idle';
   }
 
   window.setAudioEnergy = setAudioEnergy;

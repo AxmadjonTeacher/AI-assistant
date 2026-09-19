@@ -167,30 +167,34 @@ class GeminiLiveClient:
 
                 # 1. Handle Tool Calls
                 if resp.tool_call and resp.tool_call.function_calls:
-                    function_responses = []
+                    print(f"🔧 [Gemini Live] Received {len(resp.tool_call.function_calls)} tool call(s)", flush=True)
                     for fc in resp.tool_call.function_calls:
                         if on_tool_call:
                             on_tool_call(fc.name, fc.args or {})
 
+                    async def _run_single_tool(fc):
                         print(f"⚙️ [Executing Tool] {fc.name}({fc.args or {}})", flush=True)
                         tool_result = await execute_tool_call(fc.name, fc.args or {})
-                        print(f"✅ [Tool Result] {tool_result}", flush=True)
-                        
+                        print(f"✅ [Tool Result] {fc.name} -> {tool_result}", flush=True)
                         if self.on_tool_executed:
                             self.on_tool_executed(fc.name, fc.args or {}, tool_result)
-
-                        function_responses.append(
-                            types.FunctionResponse(
-                                name=fc.name,
-                                id=fc.id,
-                                response=tool_result
-                            )
+                        return types.FunctionResponse(
+                            name=fc.name,
+                            id=fc.id,
+                            response=tool_result
                         )
+
+                    function_responses = await asyncio.gather(*[_run_single_tool(fc) for fc in resp.tool_call.function_calls])
+
+                    is_dismissal = any(fc.name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"] for fc in resp.tool_call.function_calls)
+                    if is_dismissal:
+                        print("💨 [Gemini Client] Dismissal tool executed. Concluding turn immediately.", flush=True)
+                        break
 
                     # Send tool results back to Gemini Live
                     if function_responses and self.session is not None:
                         try:
-                            await self.session.send_tool_response(function_responses=function_responses)
+                            await self.session.send_tool_response(function_responses=list(function_responses))
                             self._last_activity_time = time.time()
                         except Exception as te:
                             print(f"❌ [Gemini Live] Failed to send tool response: {te}", flush=True)

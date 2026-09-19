@@ -49,20 +49,30 @@ def main():
         f"--add-data 'swan_logo_crystal.png:.' "
         f"--add-data 'swan_logo_transparent.png:.' "
         f"--add-data 'cinematic_camera_rig.py:.' "
-        f"--collect-all 'vosk' "
-        f"--add-binary '.venv/lib/python3.13/site-packages/vosk/libvosk.dyld:vosk' "
-        f"--hidden-import 'Cocoa' "
-        f"--hidden-import 'PyObjCTools' "
-        f"--hidden-import 'WebKit' "
-        f"--hidden-import 'Quartz' "
-        f"--hidden-import 'sounddevice' "
-        f"--hidden-import 'vosk' "
-        f"--hidden-import 'google.genai' "
-        f"--hidden-import 'websockets' "
-        f"--hidden-import 'PIL' "
-        f"--hidden-import 'pynput' "
-        f"--hidden-import 'resource_helper' "
-        f"--hidden-import 'state_machine' "
+        f"--collect-all 'vosk' " \
+        f"--collect-all 'docx' " \
+        f"--collect-all 'reportlab' " \
+        f"--collect-all 'pptx' " \
+        f"--collect-all 'yt_dlp' " \
+        f"--collect-all 'youtube_transcript_api' " \
+        f"--add-binary '.venv/lib/python3.13/site-packages/vosk/libvosk.dyld:vosk' " \
+        f"--hidden-import 'Cocoa' " \
+        f"--hidden-import 'PyObjCTools' " \
+        f"--hidden-import 'WebKit' " \
+        f"--hidden-import 'Quartz' " \
+        f"--hidden-import 'sounddevice' " \
+        f"--hidden-import 'vosk' " \
+        f"--hidden-import 'google.genai' " \
+        f"--hidden-import 'websockets' " \
+        f"--hidden-import 'PIL' " \
+        f"--hidden-import 'pynput' " \
+        f"--hidden-import 'resource_helper' " \
+        f"--hidden-import 'state_machine' " \
+        f"--hidden-import 'docx' " \
+        f"--hidden-import 'reportlab' " \
+        f"--hidden-import 'pptx' " \
+        f"--hidden-import 'yt_dlp' " \
+        f"--hidden-import 'youtube_transcript_api' " \
         f"app.py"
     )
     run(pyinstaller_cmd)
@@ -99,8 +109,8 @@ def main():
 
     pl["CFBundleDisplayName"] = APP_NAME
     pl["CFBundleIdentifier"] = BUNDLE_ID
-    pl["CFBundleShortVersionString"] = "1.1.0"
-    pl["CFBundleVersion"] = "1.1.0"
+    pl["CFBundleShortVersionString"] = "1.2.0"
+    pl["CFBundleVersion"] = "1.2.0"
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."

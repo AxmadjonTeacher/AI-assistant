@@ -317,7 +317,10 @@ class SwanApp:
         # 1. Instant Dismissal: Only on explicit command to vanish/disappear
         explicit_dismiss_phrases = [
             "disappear", "vanish", "go away", "get lost", "good bye", "goodbye",
-            "yo'qol", "yashirin", "ekrandan ket", "dam ol", "yo'q bo'l"
+            "yo'qol", "yashirin", "ekrandan ket", "dam ol", "yo'q bo'l",
+            "rahmat ketishing mumkin", "ketishing mumkin", "ketavering", "ketaver",
+            "rahmat", "raxmat", "raxmat ket", "bo'ldi", "boldi", "yetarli", "tamom",
+            "enough", "that's all", "that is all", "stop", "dismiss"
         ]
         is_explicit_dismiss = is_dismiss and any(w in reason.lower() for w in explicit_dismiss_phrases)
         if is_explicit_dismiss:
@@ -336,7 +339,7 @@ class SwanApp:
 
     def dismiss(self):
         """Immediately interrupts and dismisses Swan (via Escape or Option + Escape)."""
-        print("🛑 [Dismiss] Hotkey/Escape triggered instant dismiss.", flush=True)
+        print("🛑 [Dismiss] Hotkey/Escape/Voice triggered instant dismiss.", flush=True)
         self._cancel_requested = True
         self._interrupted = True
 
@@ -347,13 +350,15 @@ class SwanApp:
         if self.audio_manager.is_recording():
             self.audio_manager.stop_recording(play_chime=False)
 
-        # 3. Cancel active turn task if running
+        # 3. Cancel active turn task and in-flight streaming task
+        if self._current_client_turn_task and not self._current_client_turn_task.done() and self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._current_client_turn_task.cancel)
         if self._active_turn_future and not self._active_turn_future.done():
             self._active_turn_future.cancel()
 
         # 4. Hide notch HUD and transition state to idle
-        self.state_machine.on_idle()
         self.hud.hide(delay=0.0)
+        self.state_machine.on_idle()
 
         # 5. Reset menu bar status
         status_text = "Ready (Listening for 'Hey Swan')" if self.wake_detector.enabled else "Wake Word: OFF"
@@ -677,6 +682,19 @@ class SwanApp:
             return "Switching Desktop..."
         elif name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"]:
             return "Dismissing..."
+        elif name in ["transcribe_audio_file", "transcribe_audio", "transcribe", "audio_to_text"]:
+            return "Transcribing Audio..."
+        elif name in ["search_and_summarize_youtube", "summarize_youtube", "youtube_summary", "youtube_video"]:
+            return "Summarizing YouTube..."
+        elif name in ["create_document", "create_doc", "create_docx", "create_pdf", "generate_document"]:
+            fmt = str((args or {}).get("format", "docx")).upper()
+            return f"Creating {fmt} Document..."
+        elif name in ["create_presentation", "create_slides", "generate_slides", "make_presentation"]:
+            return "Designing Slides..."
+        elif name in ["generate_image", "create_image", "draw_image", "draw_picture", "make_picture"]:
+            return "Creating Picture..."
+        elif name in ["edit_image", "modify_image", "change_image"]:
+            return "Editing Picture..."
         elif name in ["create_blender_scene", "build_blender_scene", "blender_scene"]:
             return "Launching Blender Agent..."
         elif name in ["launch_agent", "start_agent"]:
@@ -860,7 +878,7 @@ class SwanApp:
         except asyncio.CancelledError:
             print("🛑 [Wake Cycle] Task cancelled cleanly.", flush=True)
         finally:
-            if not self._is_active():
+            if not self._cancel_requested and not self._is_active():
                 self.state_machine.on_idle()
                 self.hud.hide(delay=0.2)
             self._resume_media_if_appropriate()

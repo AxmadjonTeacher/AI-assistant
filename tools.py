@@ -2316,7 +2316,47 @@ def launch_agent(agent_type: str, task: str, details: str = "") -> dict:
             return agent_manager.launch_blender_scene(prompt=task, style=style, reference_image=ref_img)
         elif atype in ["image", "picture", "generate_image", "edit_image", "draw", "visual"]:
             return agent_manager.launch_image_agent(prompt=task, source_image_path=details if details else None)
+        elif atype in ["transcribe", "transcription", "audio", "speech_to_text"]:
+            return agent_manager.launch_transcribe_agent(file_path=details if details else None, query=task)
+        elif atype in ["youtube", "video", "youtube_summary", "summarize_video"]:
+            return agent_manager.launch_youtube_agent(query_or_url=task, focus=details)
+        elif atype in ["document", "doc", "docx", "pdf"]:
+            return agent_manager.launch_document_agent(title=task, content=details, format=atype if atype in ("docx", "pdf") else "docx")
+        elif atype in ["presentation", "slides", "pptx"]:
+            return agent_manager.launch_presentation_agent(title=task, topic_or_content=details)
         return agent_manager.launch_generic_agent(agent_type=agent_type, task_description=task, details=details)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def transcribe_audio_file(file_path: str = "", query: str = "") -> dict:
+    """Transcribes an audio recording (.mp3, .wav, .m4a, .aac, .flac) verbatim using speech intelligence and saves transcript to Desktop."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_transcribe_agent(file_path=file_path if file_path else None, query=query if query else None)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def search_and_summarize_youtube(query_or_url: str, focus: str = "") -> dict:
+    """Searches for a YouTube video or takes a URL, extracts captions, and creates a comprehensive executive summary file on Desktop."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_youtube_agent(query_or_url=query_or_url, focus=focus)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def create_document(title: str, content: str, format: str = "docx", file_name: str = "") -> dict:
+    """Creates a formatted document (.docx Word, .pdf, or .md Markdown) with titles, structured sections, and bullet points on Desktop."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_document_agent(title=title, content=content, format=format, file_name=file_name)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def create_presentation(title: str, topic_or_content: str = "", slide_count: int = 5) -> dict:
+    """Generates a PowerPoint presentation (.pptx) and standalone HTML slide deck on the user's Desktop and opens it."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_presentation_agent(title=title, topic_or_content=topic_or_content, slide_count=int(slide_count or 5))
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -2330,6 +2370,23 @@ def get_agent_status(task_id: str = "") -> dict:
 
 # Dispatch table
 TOOL_HANDLERS = {
+    "transcribe_audio_file": transcribe_audio_file,
+    "transcribe_audio": transcribe_audio_file,
+    "transcribe": transcribe_audio_file,
+    "audio_to_text": transcribe_audio_file,
+    "search_and_summarize_youtube": search_and_summarize_youtube,
+    "summarize_youtube": search_and_summarize_youtube,
+    "youtube_summary": search_and_summarize_youtube,
+    "youtube_video": search_and_summarize_youtube,
+    "create_document": create_document,
+    "create_doc": create_document,
+    "create_docx": create_document,
+    "create_pdf": create_document,
+    "generate_document": create_document,
+    "create_presentation": create_presentation,
+    "create_slides": create_presentation,
+    "generate_slides": create_presentation,
+    "make_presentation": create_presentation,
     "generate_image": generate_image,
     "create_image": generate_image,
     "draw_image": generate_image,
@@ -3072,6 +3129,89 @@ def get_jarvis_tools() -> list[types.Tool]:
                     )
                 },
                 required=["agent_type", "task"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="transcribe_audio_file",
+            description="Transcribes an audio recording (.mp3, .wav, .m4a, .aac, .flac) verbatim into text and saves the complete structured Markdown transcript onto the user's Desktop (~/Desktop) and opens it automatically.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "file_path": types.Schema(
+                        type="STRING",
+                        description="Optional file path or filename of the audio file to transcribe (e.g. '~/Downloads/meeting.m4a', 'voice.mp3'). If omitted, automatically locates the most recent audio file in Downloads/Desktop/Documents."
+                    ),
+                    "query": types.Schema(
+                        type="STRING",
+                        description="Optional keyword or hint to search for the audio file."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="search_and_summarize_youtube",
+            description="Searches YouTube for a topic or takes a direct video URL, extracts subtitles/captions with timestamps, and generates a structured Executive Summary with key insights saved directly onto the Desktop.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "query_or_url": types.Schema(
+                        type="STRING",
+                        description="YouTube video URL (e.g. 'https://youtube.com/watch?v=...') or search query (e.g. 'OpenAI GPT-5 announcement', 'quantum computing explained')."
+                    ),
+                    "focus": types.Schema(
+                        type="STRING",
+                        description="Optional specific topic, angle, or question to focus on during summarization."
+                    )
+                },
+                required=["query_or_url"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="create_document",
+            description="Creates a professionally formatted document (.docx Word document, .pdf, or .md Markdown) with titles, subheadings, and bullet points directly on the user's Desktop (~/Desktop) and opens it.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "title": types.Schema(
+                        type="STRING",
+                        description="Title of the document (e.g. 'Project Proposal', 'Meeting Notes', 'Quarterly Review')."
+                    ),
+                    "content": types.Schema(
+                        type="STRING",
+                        description="Detailed text content, sections, or bullet points to include in the document."
+                    ),
+                    "format": types.Schema(
+                        type="STRING",
+                        description="Document format: 'docx' (Microsoft Word), 'pdf', or 'markdown'. Defaults to 'docx'."
+                    ),
+                    "file_name": types.Schema(
+                        type="STRING",
+                        description="Optional custom file name without extension."
+                    )
+                },
+                required=["title", "content"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="create_presentation",
+            description="Generates a complete modern slide presentation (.pptx PowerPoint deck and interactive companion HTML slides) on the user's Desktop (~/Desktop) and opens it automatically.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "title": types.Schema(
+                        type="STRING",
+                        description="Title of the presentation / keynote (e.g. 'AI in Healthcare', 'Startup Pitch Deck')."
+                    ),
+                    "topic_or_content": types.Schema(
+                        type="STRING",
+                        description="Topic, key themes, or raw notes to turn into presentation slides."
+                    ),
+                    "slide_count": types.Schema(
+                        type="INTEGER",
+                        description="Number of slides to generate (default 5)."
+                    )
+                },
+                required=["title", "topic_or_content"]
             )
         ),
         types.FunctionDeclaration(

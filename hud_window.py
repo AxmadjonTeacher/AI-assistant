@@ -171,6 +171,8 @@ class LiquidHUDWindow:
 
     def hide(self, delay: float = 0.0):
         with self._lock:
+            self._is_visible = False
+            self._show_token += 1
             token = self._show_token
         if delay <= 0:
             AppHelper.callAfter(self._main_do_hide, token)
@@ -179,10 +181,9 @@ class LiquidHUDWindow:
 
     def _main_do_hide(self, token: int):
         with self._lock:
-            if token != self._show_token:
-                # Stale hide request from an earlier cycle; ignore!
+            if token != self._show_token or self._is_visible:
+                # Stale hide request from an earlier cycle or re-shown; ignore!
                 return
-            self._is_visible = False
         self._eval_js("window.hideHUD();")
         # Give CSS transition time to complete before ordering out
         AppHelper.callLater(0.35, self._order_out, token)
@@ -200,15 +201,20 @@ class LiquidHUDWindow:
             if state in ["wake", "listening", "thinking", "action", "speaking", "error"]:
                 self._is_visible = True
                 self._show_token += 1
+            elif state == "idle":
+                # Idle never makes the panel visible or increments show token
+                pass
             token = self._show_token
         AppHelper.callAfter(self._main_set_state, token, state, status, subtitle)
 
     def _main_set_state(self, token: int, state: str, status: Optional[str], subtitle: Optional[str]):
         with self._lock:
-            if state in ["wake", "listening", "thinking", "action", "speaking", "error"]:
-                if token != self._show_token:
-                    return
-                self._is_visible = True
+            if state == "idle":
+                # Never show or re-order when state is idle
+                self._eval_js("window.hideHUD();")
+                return
+            if token != self._show_token or not self._is_visible:
+                return
 
         try:
             if state in ["wake", "listening", "thinking", "action", "speaking", "error"]:

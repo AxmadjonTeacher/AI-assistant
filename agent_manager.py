@@ -6,6 +6,10 @@ import subprocess
 import threading
 import time
 import uuid
+import ssl
+import urllib.request
+import urllib.parse
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
@@ -280,6 +284,104 @@ class AgentManager:
             "message": f"{agent_type.capitalize()} agent launched in background. Visual indicator active in top-right corner."
         }
 
+    def launch_transcribe_agent(self, file_path: Optional[str] = None, query: Optional[str] = None) -> Dict[str, Any]:
+        """Launches an autonomous audio transcription background agent."""
+        task_id = f"aud-{uuid.uuid4().hex[:6]}"
+        display_hint = file_path or query or "Latest audio"
+        short_title = os.path.basename(display_hint)[:28]
+        task = AgentTask(
+            task_id=task_id,
+            agent_type="transcription",
+            title=f"Transcribe: {short_title}",
+            prompt=display_hint
+        )
+        with self._lock:
+            self.tasks[task_id] = task
+
+        self._sync_hud()
+        thread = threading.Thread(target=self._run_transcribe_worker, args=(task, file_path, query), daemon=True)
+        thread.start()
+
+        return {
+            "status": "launched",
+            "task_id": task_id,
+            "agent": "Swan Audio Transcriber",
+            "message": f"Audio transcription started for '{display_hint}'. Output will be saved to your Desktop and opened automatically."
+        }
+
+    def launch_youtube_agent(self, query_or_url: str, focus: str = "") -> Dict[str, Any]:
+        """Launches an autonomous YouTube search & executive summarization background agent."""
+        task_id = f"yt-{uuid.uuid4().hex[:6]}"
+        short_title = query_or_url[:28] + ("..." if len(query_or_url) > 28 else "")
+        task = AgentTask(
+            task_id=task_id,
+            agent_type="youtube_summary",
+            title=f"YouTube: {short_title}",
+            prompt=query_or_url
+        )
+        with self._lock:
+            self.tasks[task_id] = task
+
+        self._sync_hud()
+        thread = threading.Thread(target=self._run_youtube_worker, args=(task, query_or_url, focus), daemon=True)
+        thread.start()
+
+        return {
+            "status": "launched",
+            "task_id": task_id,
+            "agent": "Swan YouTube Intelligence",
+            "message": f"YouTube video summarization started for '{short_title}'. Structured executive summary will be saved to Desktop and opened."
+        }
+
+    def launch_document_agent(self, title: str, content: str, format: str = "docx", file_name: str = "") -> Dict[str, Any]:
+        """Launches an autonomous document creation background agent (.docx, .pdf, .md)."""
+        task_id = f"doc-{uuid.uuid4().hex[:6]}"
+        fmt = (format or "docx").lower()
+        short_title = title[:28] + ("..." if len(title) > 28 else "")
+        task = AgentTask(
+            task_id=task_id,
+            agent_type=f"doc_{fmt}",
+            title=f"Create {fmt.upper()}: {short_title}",
+            prompt=content[:100]
+        )
+        with self._lock:
+            self.tasks[task_id] = task
+
+        self._sync_hud()
+        thread = threading.Thread(target=self._run_document_worker, args=(task, title, content, fmt, file_name), daemon=True)
+        thread.start()
+
+        return {
+            "status": "launched",
+            "task_id": task_id,
+            "agent": "Swan Document Publisher",
+            "message": f"{fmt.upper()} document generation started for '{title}'. File will appear directly on your Desktop and open automatically."
+        }
+
+    def launch_presentation_agent(self, title: str, topic_or_content: str, slide_count: int = 5) -> Dict[str, Any]:
+        """Launches an autonomous presentation deck creation background agent (.pptx & web slides)."""
+        task_id = f"prs-{uuid.uuid4().hex[:6]}"
+        short_title = title[:28] + ("..." if len(title) > 28 else "")
+        task = AgentTask(
+            task_id=task_id,
+            agent_type="presentation",
+            title=f"Slides: {short_title}",
+            prompt=topic_or_content[:100]
+        )
+        with self._lock:
+            self.tasks[task_id] = task
+
+        self._sync_hud()
+        thread = threading.Thread(target=self._run_presentation_worker, args=(task, title, topic_or_content, slide_count), daemon=True)
+        thread.start()
+
+        return {
+            "status": "launched",
+            "task_id": task_id,
+            "agent": "Swan Keynote Architect",
+            "message": f"Presentation slide generation started for '{title}' ({slide_count} slides). PowerPoint (.pptx) and preview deck will appear on Desktop."
+        }
+
     def _play_chime(self):
         """Plays subtle macOS completion chime."""
         try:
@@ -289,9 +391,17 @@ class AgentManager:
         except Exception:
             pass
 
-    def _ensure_blender_running(self) -> bool:
-        """Checks if Blender socket is listening or launches Blender app."""
-        # Check socket 9876
+    def _check_blender_http(self) -> bool:
+        try:
+            req = urllib.request.Request("http://127.0.0.1:9877/ping", headers={"User-Agent": "Swan/1.1"})
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _check_blender_tcp(self) -> bool:
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(1.0)
@@ -300,22 +410,40 @@ class AgentManager:
             return True
         except Exception:
             pass
+        return False
 
-        # Try launching Blender
+    def _ensure_blender_running(self) -> bool:
+        """Checks if Blender HTTP bridge (9877) or socket (9876) is listening, or launches Blender app with bridge."""
+        if self._check_blender_http() or self._check_blender_tcp():
+            return True
+
+        # Ensure startup bridge script is in place
+        startup_dir = os.path.expanduser("~/Library/Application Support/Blender/5.2/scripts/startup")
+        os.makedirs(startup_dir, exist_ok=True)
+        bridge_dest = os.path.join(startup_dir, "blender_live_bridge.py")
+        src_bridge = "/Users/ahmetyadgarov/blender/blender_live_bridge.py"
+        if not os.path.isfile(bridge_dest) and os.path.isfile(src_bridge):
+            try:
+                import shutil
+                shutil.copy2(src_bridge, bridge_dest)
+            except Exception:
+                pass
+
         try:
-            print("🎨 [AgentManager] Blender not connected on port 9876. Launching Blender.app...", flush=True)
-            subprocess.Popen(["open", "-a", "Blender"])
-            # Wait up to 5 seconds for socket
-            for _ in range(10):
+            print("🎨 [AgentManager] Blender not connected on port 9877/9876. Launching Blender with Live Bridge...", flush=True)
+            blender_app = "/Applications/Blender.app/Contents/MacOS/Blender"
+            bridge_script = bridge_dest if os.path.isfile(bridge_dest) else src_bridge
+            if os.path.isfile(blender_app) and os.path.isfile(bridge_script):
+                subprocess.Popen([blender_app, "--python", bridge_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(["open", "-a", "Blender"])
+
+            # Wait up to 12 seconds for bridge to be ready
+            for _ in range(24):
                 time.sleep(0.5)
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(0.5)
-                    s.connect(("127.0.0.1", 9876))
-                    s.close()
+                if self._check_blender_http() or self._check_blender_tcp():
+                    print("✅ [AgentManager] Connected to Blender Live Bridge!", flush=True)
                     return True
-                except Exception:
-                    continue
         except Exception as e:
             print(f"⚠️ [AgentManager] Failed to launch Blender: {e}", flush=True)
 
@@ -392,6 +520,60 @@ class AgentManager:
             raise RuntimeError(err_msg)
         return res
 
+    def _execute_in_blender(self, code_str: str, timeout: float = 60.0) -> Dict[str, Any]:
+        """Executes python code in Blender via HTTP bridge (port 9877) or TCP socket (port 9876)."""
+        # Dynamically load cinematic camera rig helper if present
+        rig_helper = ""
+        try:
+            from resource_helper import get_resource_path
+            rig_file = get_resource_path("cinematic_camera_rig.py")
+        except Exception:
+            rig_file = os.path.join(os.path.dirname(__file__), "cinematic_camera_rig.py")
+        if os.path.isfile(rig_file):
+            try:
+                with open(rig_file, "r", encoding="utf-8") as rf:
+                    rig_helper = rf.read() + "\n"
+            except Exception:
+                pass
+
+        wrapped_code = (
+            "import bpy, math\n"
+            "result = {'status': 'completed'}\n"
+            + rig_helper
+            + code_str
+            + "\n"
+            "# Tag 3D viewport redraw\n"
+            "for wm in bpy.data.window_managers:\n"
+            "    for win in wm.windows:\n"
+            "        for area in win.screen.areas:\n"
+            "            if area.type == 'VIEW_3D':\n"
+            "                area.tag_redraw()\n"
+            "# Ensure result variable is always a valid dict for Blender MCP bridge\n"
+            "if not isinstance(locals().get('result'), dict):\n"
+            "    result = {'status': 'completed', 'objects_count': len(bpy.data.objects)}\n"
+        )
+
+        # 1. Try HTTP Bridge on 9877 first (runs safely on main thread via bpy.app.timers)
+        if self._check_blender_http():
+            try:
+                req = urllib.request.Request(
+                    "http://127.0.0.1:9877/execute",
+                    data=json.dumps({"code": wrapped_code}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "User-Agent": "Swan/1.1"}
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw_res = resp.read().decode("utf-8")
+                    res = json.loads(raw_res)
+                    if not res.get("success", False):
+                        err_msg = res.get("error") or res.get("message") or "Blender execution error"
+                        raise RuntimeError(err_msg)
+                    return {"status": "completed", "result": res}
+            except Exception as http_err:
+                print(f"⚠️ [AgentManager] HTTP bridge execution failed: {http_err}. Trying socket...", flush=True)
+
+        # 2. Fallback to raw TCP socket on 9876
+        return self._execute_in_blender_socket(code_str, timeout=timeout)
+
     @staticmethod
     def _generate_with_fallback(client, contents, config, models=("gemini-3.1-flash-lite-preview", "gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.6-flash")):
         last_err = None
@@ -429,7 +611,7 @@ class AgentManager:
                 "    'fps': bpy.context.scene.render.fps\n"
                 "}\n"
             )
-            res = self._execute_in_blender_socket(inspect_code, timeout=8.0)
+            res = self._execute_in_blender(inspect_code, timeout=8.0)
             return res.get("result", {})
         except Exception as e:
             print(f"⚠️ [AgentManager] Scene inspection failed: {e}", flush=True)
@@ -446,7 +628,7 @@ class AgentManager:
             )
 
             if not self._ensure_blender_running():
-                raise RuntimeError("Could not connect to Blender on 127.0.0.1:9876. Please ensure Blender is running.")
+                raise RuntimeError("Could not connect to Blender on port 9877 or 9876. Please ensure Blender is running.")
 
             # MODE A: 2D REFERENCE IMAGE / LOGO TO 3D MODEL RECONSTRUCTION
             if reference_image_path and os.path.isfile(reference_image_path):
@@ -654,7 +836,7 @@ class AgentManager:
             last_err = None
             for attempt in range(3):
                 try:
-                    exec_res = self._execute_in_blender_socket(current_code)
+                    exec_res = self._execute_in_blender(current_code)
                     print(f"🎨 [Blender Agent] Code executed successfully (attempt {attempt+1}): {exec_res}", flush=True)
                     last_err = None
                     break
@@ -683,7 +865,7 @@ class AgentManager:
                 raise last_err
 
             # Verification: Ensure objects were actually created or preserved
-            verify_res = self._execute_in_blender_socket("result = {'count': len(bpy.data.objects), 'names': [o.name for o in bpy.data.objects]}")
+            verify_res = self._execute_in_blender("result = {'count': len(bpy.data.objects), 'names': [o.name for o in bpy.data.objects]}")
             obj_info = verify_res.get("result", {})
             obj_count = obj_info.get("count", 0)
 
@@ -805,13 +987,13 @@ class AgentManager:
             norm_ratio = aspect_ratio if aspect_ratio in dim_map else "1:1"
             width, height = dim_map[norm_ratio]
 
-            candidate_models = ["nano-banana-pro-preview", "gemini-3.1-flash-lite-image", "gemini-2.5-flash-image", "gemini-3.1-flash-image"]
+            candidate_models = ["gemini-2.5-flash-image", "gemini-3.1-flash-image", "gemini-3-pro-image", "gemini-3.1-flash-lite-image"]
             if model_preference:
                 pref = model_preference.lower()
                 if "lite" in pref:
-                    candidate_models = ["gemini-3.1-flash-lite-image", "nano-banana-pro-preview", "gemini-2.5-flash-image"]
-                elif "pro" in pref or "banana" in pref or "nano" in pref:
-                    candidate_models = ["nano-banana-pro-preview", "gemini-3.1-flash-lite-image", "gemini-2.5-flash-image"]
+                    candidate_models = ["gemini-3.1-flash-lite-image", "gemini-2.5-flash-image"]
+                elif "pro" in pref:
+                    candidate_models = ["gemini-3-pro-image", "gemini-3.1-flash-image"]
 
             success = False
             try:
@@ -884,7 +1066,7 @@ class AgentManager:
                     except Exception:
                         pass
 
-                import urllib.request, urllib.parse, ssl, random
+                import random
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
@@ -892,21 +1074,27 @@ class AgentManager:
                 clean_prompt = final_prompt[:250].strip()
                 enc_p = urllib.parse.quote(clean_prompt)
                 seed = random.randint(1000, 999999)
-                url = f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&enhance=true&nologo=true&seed={seed}"
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
-                try:
-                    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-                        raw_bytes = resp.read()
-                except Exception as net_err:
-                    print(f"⚠️ [Image Agent] Initial request notice: {net_err}. Retrying with direct prompt...", flush=True)
-                    direct_p = urllib.parse.quote(task.prompt[:180].strip())
-                    alt_url = f"https://image.pollinations.ai/prompt/{direct_p}?width={width}&height={height}&nologo=true&seed={random.randint(1, 9999)}"
-                    req2 = urllib.request.Request(alt_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
-                    with urllib.request.urlopen(req2, timeout=30, context=ctx) as resp2:
-                        raw_bytes = resp2.read()
+                raw_bytes = b""
+
+                urls_to_try = [
+                    f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&model=flux&nologo=true&seed={seed}",
+                    f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&model=turbo&nologo=true&seed={seed}",
+                    f"https://image.pollinations.ai/prompt/{enc_p}?width={width}&height={height}&nologo=true&seed={seed}",
+                    f"https://image.pollinations.ai/prompt/{urllib.parse.quote(task.prompt[:180].strip())}?width={width}&height={height}&nologo=true&seed={seed}"
+                ]
+
+                for u in urls_to_try:
+                    try:
+                        req_p = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
+                        with urllib.request.urlopen(req_p, timeout=25, context=ctx) as resp:
+                            data = resp.read()
+                            if len(data) > 1000:
+                                raw_bytes = data
+                                break
+                    except Exception as net_err:
+                        print(f"⚠️ [Image Agent] URL attempt failed ({u[:60]}...): {net_err}", flush=True)
 
                 if len(raw_bytes) > 1000:
-                    # Load image, crop bottom 48px to eliminate watermark logo completely, and resize back cleanly
                     from PIL import Image
                     import io
                     raw_img = Image.open(io.BytesIO(raw_bytes))
@@ -938,6 +1126,608 @@ class AgentManager:
             task.finished_at = time.time()
             task.error = str(e)
             self._sync_hud(recent_title="Image failed", is_completion=True)
+
+    def _run_transcribe_worker(self, task: AgentTask, file_path: Optional[str], query: Optional[str]):
+        print(f"🎙️ [Transcribe Agent] Starting audio transcription for '{file_path or query}'", flush=True)
+        _update_hud_working("Transcribing Audio 🎙️", "Locating audio file...")
+        try:
+            desktop_dir = os.path.expanduser("~/Desktop")
+            search_folders = [
+                os.path.expanduser("~/Downloads"),
+                desktop_dir,
+                os.path.expanduser("~/Documents"),
+                os.path.expanduser("~/Music")
+            ]
+            audio_exts = (".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac", ".webm")
+
+            resolved_path = None
+            target = (file_path or query or "").strip()
+
+            if target:
+                expanded = os.path.expanduser(target)
+                if os.path.isfile(expanded):
+                    resolved_path = expanded
+                else:
+                    clean_norm = os.path.basename(target).lower().replace(" ", "").replace("_", "").replace("-", "")
+                    for folder in search_folders:
+                        if not os.path.isdir(folder):
+                            continue
+                        for f in os.listdir(folder):
+                            if f.lower().endswith(audio_exts):
+                                f_norm = f.lower().replace(" ", "").replace("_", "").replace("-", "")
+                                if clean_norm in f_norm or f_norm in clean_norm:
+                                    resolved_path = os.path.join(folder, f)
+                                    break
+                        if resolved_path:
+                            break
+
+            if not resolved_path:
+                all_audios = []
+                for folder in search_folders:
+                    if os.path.isdir(folder):
+                        for f in os.listdir(folder):
+                            if f.lower().endswith(audio_exts):
+                                p = os.path.join(folder, f)
+                                all_audios.append((os.path.getmtime(p), p))
+                if all_audios:
+                    all_audios.sort(key=lambda x: x[0], reverse=True)
+                    resolved_path = all_audios[0][1]
+
+            if not resolved_path or not os.path.isfile(resolved_path):
+                raise RuntimeError("Could not find any audio file to transcribe in ~/Downloads, ~/Desktop, ~/Documents, or ~/Music.")
+
+            audio_name = os.path.basename(resolved_path)
+            print(f"🎙️ [Transcribe Agent] Found audio file: {resolved_path}", flush=True)
+            _update_hud_working("Transcribing Audio 🎙️", f"Analyzing {audio_name[:25]}...")
+
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=config.api_key)
+
+            with open(resolved_path, "rb") as af:
+                audio_bytes = af.read()
+
+            ext = os.path.splitext(resolved_path)[1].lower()
+            mime_map = {
+                ".wav": "audio/wav",
+                ".mp3": "audio/mp3",
+                ".m4a": "audio/mp4",
+                ".aac": "audio/aac",
+                ".ogg": "audio/ogg",
+                ".flac": "audio/flac",
+                ".webm": "audio/webm"
+            }
+            mime = mime_map.get(ext, "audio/mp3")
+
+            part = types.Part.from_bytes(data=audio_bytes, mime_type=mime)
+            prompt = (
+                "You are an expert, meticulous audio transcriber and speech-to-text intelligence. "
+                "Please transcribe the provided audio verbatim, completely, and accurately in the exact language spoken. "
+                "Format with clear speaker turns or natural paragraph breaks. "
+                "Do NOT add introductory or concluding chatter. Output ONLY the clean transcription."
+            )
+
+            try:
+                resp = self._generate_with_fallback(client, [part, prompt], None, models=("gemini-flash-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest"))
+                transcript = resp.text.strip() if resp and resp.text else ""
+            except Exception as te:
+                print(f"⚠️ [Transcribe Agent] Primary audio model notice: {te}. Retrying with flash-lite...", flush=True)
+                resp = client.models.generate_content(model="gemini-3.1-flash-lite-preview", contents=[part, prompt])
+                transcript = resp.text.strip() if resp and resp.text else ""
+
+            if not transcript:
+                raise RuntimeError("Transcription result was empty.")
+
+            base_root = os.path.splitext(audio_name)[0]
+            out_file = os.path.join(desktop_dir, f"{base_root}_transcript.md")
+            with open(out_file, "w", encoding="utf-8") as out_f:
+                out_f.write(f"# Audio Transcription: {audio_name}\n\n")
+                out_f.write(f"*Transcribed by Swan AI Agent on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+                out_f.write("---\n\n")
+                out_f.write(transcript)
+                out_f.write("\n")
+
+            try:
+                subprocess.Popen(["open", out_file])
+            except Exception:
+                pass
+
+            task.status = "completed"
+            task.finished_at = time.time()
+            task.result_message = f"Audio transcribed successfully: {out_file}"
+            self._sync_hud(recent_title=f"{base_root[:20]} transcribed", is_completion=True)
+            self._play_chime()
+
+        except Exception as e:
+            print(f"❌ [Transcribe Agent Error]: {e}", flush=True)
+            task.status = "failed"
+            task.finished_at = time.time()
+            task.error = str(e)
+            self._sync_hud(recent_title="Transcription failed", is_completion=True)
+
+    def _run_youtube_worker(self, task: AgentTask, query_or_url: str, focus: str):
+        print(f"▶️ [YouTube Agent] Searching & summarizing: '{query_or_url}' (focus: {focus})", flush=True)
+        _update_hud_working("YouTube Agent ▶️", "Locating video & captions...")
+        try:
+            import yt_dlp
+            import requests
+
+            target_url = query_or_url.strip()
+            video_title = "YouTube Video"
+            video_url = ""
+
+            ydl_opts = {
+                "quiet": True,
+                "skip_download": True,
+                "no_warnings": True
+            }
+
+            is_url = "youtube.com" in target_url or "youtu.be" in target_url
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                search_key = target_url if is_url else f"ytsearch1:{target_url}"
+                info = ydl.extract_info(search_key, download=False)
+                if "entries" in info and info["entries"]:
+                    entry = info["entries"][0]
+                else:
+                    entry = info
+
+                video_title = entry.get("title") or "YouTube Video"
+                video_url = entry.get("webpage_url") or entry.get("url") or target_url
+                uploader = entry.get("uploader") or entry.get("channel") or ""
+                description = entry.get("description") or ""
+                auto_caps = entry.get("automatic_captions") or {}
+                subs = entry.get("subtitles") or {}
+
+            print(f"▶️ [YouTube Agent] Video identified: '{video_title}' ({video_url})", flush=True)
+            _update_hud_working("YouTube Agent ▶️", f"Extracting {video_title[:25]}...")
+
+            captions_text = ""
+            all_caps = {**auto_caps, **subs}
+            lang_pool = ["uz", "en", "ru", "tr"]
+            found_caps = None
+            for lp in lang_pool:
+                if lp in all_caps:
+                    found_caps = all_caps[lp]
+                    break
+            if not found_caps and all_caps:
+                found_caps = list(all_caps.values())[0]
+
+            if found_caps:
+                sub_url = None
+                for fmt in found_caps:
+                    if fmt.get("ext") in ("json3", "srv3", "vtt"):
+                        sub_url = fmt.get("url")
+                        break
+                if not sub_url and found_caps:
+                    sub_url = found_caps[0].get("url")
+
+                if sub_url:
+                    try:
+                        resp = requests.get(sub_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}, timeout=12)
+                        if "json" in resp.headers.get("Content-Type", "") or sub_url.endswith("json3") or "json" in sub_url:
+                            data = resp.json()
+                            lines = []
+                            for ev in data.get("events", []):
+                                segs = ev.get("segs", [])
+                                txt = "".join(s.get("utf8", "") for s in segs).strip()
+                                if txt and txt != "\n":
+                                    t_sec = ev.get("tStartMs", 0) // 1000
+                                    lines.append(f"[{t_sec // 60:02d}:{t_sec % 60:02d}] {txt}")
+                            captions_text = "\n".join(lines)
+                        else:
+                            captions_text = resp.text
+                    except Exception as ce:
+                        print(f"⚠️ [YouTube Agent] Caption download notice: {ce}", flush=True)
+
+            if not captions_text:
+                captions_text = f"Video Description:\n{description[:4000]}"
+
+            _update_hud_working("YouTube Agent ▶️", "Generating Executive Summary...")
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=config.api_key)
+
+            summary_prompt = (
+                "You are an elite research analyst and executive summarizer.\n"
+                f"Video Title: {video_title}\n"
+                f"Channel: {uploader}\n"
+                f"URL: {video_url}\n"
+                f"User Focus / Request: {focus or 'Comprehensive high-level summary'}\n\n"
+                f"Transcript / Content:\n{captions_text[:35000]}\n\n"
+                "Please produce a world-class, beautifully structured Executive Summary in Markdown with:\n"
+                "1. 🎯 Executive Overview & Core Thesis (2-3 concise paragraphs)\n"
+                "2. 💡 Key Takeaways & Actionable Insights (bulleted)\n"
+                "3. ⏱️ Timeline & Section Highlights (key timestamp moments)\n"
+                "4. 💬 Notable Quotes / Standout Statements\n"
+                "5. 🏁 Conclusion & Final Synthesis\n"
+                "Format in crisp, modern GitHub Markdown with bolding, quotes, and clean dividers."
+            )
+
+            res = self._generate_with_fallback(
+                client,
+                contents=summary_prompt,
+                config=None,
+                models=("gemini-flash-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest", "gemini-2.5-flash")
+            )
+            summary_content = res.text.strip() if res and res.text else "Failed to generate summary."
+
+            safe_title = "".join(c for c in video_title if c.isalnum() or c in (" ", "_", "-")).strip()[:40]
+            desktop_dir = os.path.expanduser("~/Desktop")
+            out_file = os.path.join(desktop_dir, f"{safe_title}_Summary.md")
+
+            with open(out_file, "w", encoding="utf-8") as sf:
+                sf.write(f"# YouTube Summary: {video_title}\n\n")
+                sf.write(f"**Channel:** {uploader} | **Link:** [{video_url}]({video_url})\n\n")
+                sf.write(f"*Generated by Swan AI on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+                sf.write("---\n\n")
+                sf.write(summary_content)
+                sf.write("\n")
+
+            try:
+                subprocess.Popen(["open", out_file])
+            except Exception:
+                pass
+
+            task.status = "completed"
+            task.finished_at = time.time()
+            task.result_message = f"YouTube video summarized: {out_file}"
+            self._sync_hud(recent_title=f"{safe_title[:20]} summarized", is_completion=True)
+            self._play_chime()
+
+        except Exception as e:
+            print(f"❌ [YouTube Agent Error]: {e}", flush=True)
+            task.status = "failed"
+            task.finished_at = time.time()
+            task.error = str(e)
+            self._sync_hud(recent_title="YouTube summary failed", is_completion=True)
+
+    def _run_document_worker(self, task: AgentTask, title: str, content: str, format: str = "docx", file_name: str = ""):
+        fmt = format.lower().strip()
+        if fmt not in ("docx", "pdf", "markdown", "md", "txt"):
+            fmt = "docx"
+        if fmt == "md":
+            fmt = "markdown"
+
+        print(f"📄 [Document Agent] Generating {fmt.upper()} document: '{title}'", flush=True)
+        _update_hud_working(f"Creating {fmt.upper()} 📄", f"{title[:25]}...")
+        try:
+            desktop_dir = os.path.expanduser("~/Desktop")
+            safe_name = file_name.strip() if file_name else "".join(c for c in title if c.isalnum() or c in (" ", "_", "-")).strip()
+            if not safe_name:
+                safe_name = f"Swan_Document_{int(time.time())}"
+
+            if len(content) < 500:
+                try:
+                    from google import genai
+                    client = genai.Client(api_key=config.api_key)
+                    enrich_prompt = (
+                        f"You are a professional executive document author.\n"
+                        f"Title: {title}\n"
+                        f"Topic/Instructions: {content}\n\n"
+                        "Expand this into a well-structured, comprehensive professional document with clear headings (#, ##), structured bullet points, and high-impact executive prose."
+                    )
+                    res = self._generate_with_fallback(
+                        client,
+                        contents=enrich_prompt,
+                        config=None,
+                        models=("gemini-flash-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest", "gemini-2.5-flash")
+                    )
+                    if res and res.text:
+                        content = res.text.strip()
+                except Exception:
+                    pass
+
+            if fmt == "docx":
+                out_path = os.path.join(desktop_dir, f"{safe_name}.docx")
+                import docx
+                from docx.shared import Inches, Pt, RGBColor
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+                doc = docx.Document()
+                title_p = doc.add_paragraph()
+                title_run = title_p.add_run(title)
+                title_run.font.size = Pt(24)
+                title_run.font.bold = True
+                title_run.font.color.rgb = RGBColor(30, 41, 59)
+                title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                meta_p = doc.add_paragraph()
+                meta_run = meta_p.add_run(f"Generated by Swan AI Agent • {datetime.now().strftime('%B %d, %Y')}")
+                meta_run.font.size = Pt(10)
+                meta_run.font.italic = True
+                meta_run.font.color.rgb = RGBColor(100, 116, 139)
+                meta_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                doc.add_paragraph()
+
+                for line in content.split("\n"):
+                    s = line.strip()
+                    if not s:
+                        continue
+                    if s.startswith("# "):
+                        doc.add_heading(s[2:], level=1)
+                    elif s.startswith("## "):
+                        doc.add_heading(s[3:], level=2)
+                    elif s.startswith("### "):
+                        doc.add_heading(s[4:], level=3)
+                    elif s.startswith("- ") or s.startswith("* "):
+                        doc.add_paragraph(s[2:], style="List Bullet")
+                    elif s.startswith("1. ") or s.startswith("2. ") or s.startswith("3. "):
+                        doc.add_paragraph(s[3:], style="List Number")
+                    else:
+                        doc.add_paragraph(s)
+
+                doc.save(out_path)
+
+            elif fmt == "pdf":
+                out_path = os.path.join(desktop_dir, f"{safe_name}.pdf")
+                from reportlab.lib.pagesizes import letter
+                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib import colors
+
+                doc = SimpleDocTemplate(out_path, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=54, bottomMargin=54)
+                styles = getSampleStyleSheet()
+
+                title_style = ParagraphStyle(
+                    'DocTitle',
+                    parent=styles['Heading1'],
+                    fontSize=22,
+                    leading=26,
+                    textColor=colors.HexColor('#0f172a'),
+                    spaceAfter=8,
+                    alignment=1
+                )
+                meta_style = ParagraphStyle(
+                    'DocMeta',
+                    parent=styles['Normal'],
+                    fontSize=9,
+                    leading=12,
+                    textColor=colors.HexColor('#64748b'),
+                    spaceAfter=18,
+                    alignment=1
+                )
+                h2_style = ParagraphStyle(
+                    'DocH2',
+                    parent=styles['Heading2'],
+                    fontSize=14,
+                    leading=18,
+                    textColor=colors.HexColor('#1e293b'),
+                    spaceBefore=14,
+                    spaceAfter=6
+                )
+                body_style = ParagraphStyle(
+                    'DocBody',
+                    parent=styles['BodyText'],
+                    fontSize=10,
+                    leading=15,
+                    textColor=colors.HexColor('#334155'),
+                    spaceAfter=8
+                )
+
+                story = [
+                    Paragraph(title, title_style),
+                    Paragraph(f"Generated by Swan AI • {datetime.now().strftime('%B %d, %Y')}", meta_style),
+                    Spacer(1, 10)
+                ]
+
+                for line in content.split("\n"):
+                    s = line.strip()
+                    if not s:
+                        continue
+                    clean_s = s.replace("<", "&lt;").replace(">", "&gt;")
+                    if s.startswith("# ") or s.startswith("## "):
+                        h_text = clean_s.lstrip("# ").strip()
+                        story.append(Paragraph(h_text, h2_style))
+                    elif s.startswith("- ") or s.startswith("* "):
+                        bullet_text = clean_s[2:].strip()
+                        story.append(Paragraph(f"• {bullet_text}", body_style))
+                    else:
+                        story.append(Paragraph(clean_s, body_style))
+
+                doc.build(story)
+
+            else:
+                out_path = os.path.join(desktop_dir, f"{safe_name}.md")
+                with open(out_path, "w", encoding="utf-8") as mf:
+                    mf.write(f"# {title}\n\n")
+                    mf.write(f"*Generated by Swan AI • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+                    mf.write("---\n\n")
+                    mf.write(content)
+                    mf.write("\n")
+
+            try:
+                subprocess.Popen(["open", out_path])
+            except Exception:
+                pass
+
+            task.status = "completed"
+            task.finished_at = time.time()
+            task.result_message = f"{fmt.upper()} document created: {out_path}"
+            self._sync_hud(recent_title=f"{safe_name[:20]} created", is_completion=True)
+            self._play_chime()
+
+        except Exception as e:
+            print(f"❌ [Document Agent Error]: {e}", flush=True)
+            task.status = "failed"
+            task.finished_at = time.time()
+            task.error = str(e)
+            self._sync_hud(recent_title="Document creation failed", is_completion=True)
+
+    def _run_presentation_worker(self, task: AgentTask, title: str, topic_or_content: str, slide_count: int = 5):
+        print(f"📊 [Presentation Agent] Generating {slide_count} slides: '{title}'", flush=True)
+        _update_hud_working("Presentation Agent 📊", f"Designing {title[:22]}...")
+        try:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=config.api_key)
+
+            slide_prompt = (
+                f"You are a master presentation designer and keynote architect.\n"
+                f"Title: {title}\n"
+                f"Topic & Raw Material: {topic_or_content}\n"
+                f"Slide Count: {slide_count}\n\n"
+                "Design a high-impact, modern 16:9 presentation deck.\n"
+                "Return a JSON array of slide objects. Each slide object MUST have:\n"
+                "- 'title': str (short, memorable slide heading)\n"
+                "- 'subtitle': str (optional category or tagline)\n"
+                "- 'points': list of 3-4 bullet strings (high value, concise)\n"
+                "- 'takeaway': str (one punchy highlight sentence)\n\n"
+                "Output ONLY valid raw JSON array."
+            )
+
+            res = self._generate_with_fallback(
+                client,
+                contents=slide_prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+                models=("gemini-flash-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest", "gemini-2.5-flash")
+            )
+
+            slides_data = json.loads(res.text) if res and res.text else []
+            if not isinstance(slides_data, list) or not slides_data:
+                slides_data = [
+                    {"title": title, "subtitle": "Executive Briefing", "points": [topic_or_content], "takeaway": "Key strategy overview"}
+                ]
+
+            desktop_dir = os.path.expanduser("~/Desktop")
+            safe_name = "".join(c for c in title if c.isalnum() or c in (" ", "_", "-")).strip()
+            if not safe_name:
+                safe_name = f"Swan_Presentation_{int(time.time())}"
+
+            # 1. Generate PPTX
+            pptx_path = os.path.join(desktop_dir, f"{safe_name}.pptx")
+            from pptx import Presentation
+            from pptx.util import Inches, Pt
+            from pptx.dml.color import RGBColor
+
+            prs = Presentation()
+            prs.slide_width = Inches(13.333)
+            prs.slide_height = Inches(7.5)
+            blank_layout = prs.slide_layouts[6]
+
+            # Slide 1: Title Slide
+            s1 = prs.slides.add_slide(blank_layout)
+            bg = s1.shapes.add_shape(1, Inches(0), Inches(0), Inches(13.333), Inches(7.5))
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = RGBColor(15, 23, 42)
+            bg.line.fill.background()
+
+            t_box = s1.shapes.add_textbox(Inches(1.5), Inches(2.2), Inches(10.333), Inches(3.0))
+            tf = t_box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = title
+            p.font.size = Pt(44)
+            p.font.bold = True
+            p.font.color.rgb = RGBColor(248, 250, 252)
+
+            sub_p = tf.add_paragraph()
+            sub_p.text = slides_data[0].get("subtitle") or "Executive Strategy & Analysis"
+            sub_p.font.size = Pt(20)
+            sub_p.font.color.rgb = RGBColor(148, 163, 184)
+            sub_p.space_before = Pt(14)
+
+            # Content Slides
+            for i, s_info in enumerate(slides_data):
+                if i == 0 and len(slides_data) > 1:
+                    continue
+                slide = prs.slides.add_slide(blank_layout)
+                c_bg = slide.shapes.add_shape(1, Inches(0), Inches(0), Inches(13.333), Inches(7.5))
+                c_bg.fill.solid()
+                c_bg.fill.fore_color.rgb = RGBColor(248, 250, 252)
+                c_bg.line.fill.background()
+
+                h_box = slide.shapes.add_textbox(Inches(1.0), Inches(0.8), Inches(11.333), Inches(1.2))
+                h_tf = h_box.text_frame
+                h_p = h_tf.paragraphs[0]
+                h_p.text = s_info.get("title", f"Section {i+1}")
+                h_p.font.size = Pt(32)
+                h_p.font.bold = True
+                h_p.font.color.rgb = RGBColor(15, 23, 42)
+
+                b_box = slide.shapes.add_textbox(Inches(1.0), Inches(2.2), Inches(11.333), Inches(3.6))
+                b_tf = b_box.text_frame
+                b_tf.word_wrap = True
+
+                for pt in s_info.get("points", []):
+                    bp = b_tf.add_paragraph()
+                    bp.text = f"• {pt}"
+                    bp.font.size = Pt(20)
+                    bp.font.color.rgb = RGBColor(51, 65, 85)
+                    bp.space_after = Pt(14)
+
+                takeaway = s_info.get("takeaway")
+                if takeaway:
+                    card = slide.shapes.add_shape(1, Inches(1.0), Inches(6.0), Inches(11.333), Inches(0.9))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = RGBColor(226, 232, 240)
+                    card.line.fill.background()
+                    c_tf = card.text_frame
+                    cp = c_tf.paragraphs[0]
+                    cp.text = f"💡 Key Takeaway: {takeaway}"
+                    cp.font.size = Pt(14)
+                    cp.font.bold = True
+                    cp.font.color.rgb = RGBColor(30, 41, 59)
+
+            prs.save(pptx_path)
+
+            # 2. Companion HTML slides
+            html_path = os.path.join(desktop_dir, f"{safe_name}_slides.html")
+            html_slides = []
+            for idx, s in enumerate(slides_data):
+                pts_html = "".join(f"<li>{p}</li>" for p in s.get("points", []))
+                takeaway_html = f"<div class='takeaway'><strong>Key Takeaway:</strong> {s.get('takeaway')}</div>" if s.get("takeaway") else ""
+                html_slides.append(f"""
+                <section class="slide" id="slide-{idx+1}">
+                    <div class="slide-num">{idx+1} / {len(slides_data)}</div>
+                    <h2>{s.get('title')}</h2>
+                    <div class="subtitle">{s.get('subtitle', '')}</div>
+                    <ul>{pts_html}</ul>
+                    {takeaway_html}
+                </section>
+                """)
+
+            full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }}
+  .deck {{ width: 100%; max-width: 960px; display: flex; flex-direction: column; gap: 40px; }}
+  .slide {{ background: #1e293b; border-radius: 16px; padding: 48px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.08); position: relative; min-height: 400px; display: flex; flex-direction: column; justify-content: center; }}
+  .slide-num {{ position: absolute; top: 24px; right: 28px; font-size: 13px; color: #64748b; font-weight: 600; }}
+  h2 {{ margin: 0 0 8px 0; font-size: 32px; color: #38bdf8; }}
+  .subtitle {{ color: #94a3b8; font-size: 18px; margin-bottom: 24px; }}
+  ul {{ margin: 0 0 24px 0; padding-left: 24px; font-size: 18px; line-height: 1.8; color: #e2e8f0; }}
+  .takeaway {{ background: rgba(56, 189, 248, 0.1); border-left: 4px solid #38bdf8; padding: 14px 18px; border-radius: 6px; font-size: 15px; color: #bae6fd; }}
+</style>
+</head>
+<body>
+  <div class="deck">
+    {''.join(html_slides)}
+  </div>
+</body>
+</html>"""
+            with open(html_path, "w", encoding="utf-8") as hf:
+                hf.write(full_html)
+
+            try:
+                subprocess.Popen(["open", pptx_path])
+            except Exception:
+                pass
+
+            task.status = "completed"
+            task.finished_at = time.time()
+            task.result_message = f"Presentation slides created: {pptx_path}"
+            self._sync_hud(recent_title=f"{safe_name[:20]} slides ready", is_completion=True)
+            self._play_chime()
+
+        except Exception as e:
+            print(f"❌ [Presentation Agent Error]: {e}", flush=True)
+            task.status = "failed"
+            task.finished_at = time.time()
+            task.error = str(e)
+            self._sync_hud(recent_title="Presentation failed", is_completion=True)
 
     def get_status(self, task_id: Optional[str] = None) -> Dict[str, Any]:
         with self._lock:
