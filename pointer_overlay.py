@@ -52,6 +52,7 @@ class SwanPointerOverlay:
         self._page_loaded = False
         self._pending_evals = []
         self._lock = threading.Lock()
+        self._hide_timer = None
 
         self._init_window()
 
@@ -106,7 +107,7 @@ class SwanPointerOverlay:
         else:
             print(f"⚠️ [PointerOverlay] Template file not found: {self.template_path}", flush=True)
 
-        self.panel.orderFrontRegardless()
+        self.panel.orderOut_(None)
 
     def _on_web_loaded(self):
         self._page_loaded = True
@@ -122,6 +123,12 @@ class SwanPointerOverlay:
             return
         if self.webview:
             self.webview.evaluateJavaScript_completionHandler_(script, None)
+
+    def _order_out(self):
+        def _do_order_out():
+            if self.panel:
+                self.panel.orderOut_(None)
+        AppHelper.callAfter(_do_order_out)
 
     def point_at(self, x: int, y: int, duration: float = 3.8, action: str = "point", label: str = ""):
         """Slides the custom cyber-hand cursor from the top notch down to (x, y) on screen.
@@ -143,6 +150,14 @@ class SwanPointerOverlay:
             js = f"window.pointAt({int(x)}, {int(y)}, {float(duration)}, {clean_action}, {clean_label});"
             self._eval_js(js)
 
+            # Auto order-out panel after pointer duration + retraction physics
+            with self._lock:
+                if hasattr(self, "_hide_timer") and self._hide_timer:
+                    self._hide_timer.cancel()
+                self._hide_timer = threading.Timer(duration + 0.65, self._order_out)
+                self._hide_timer.daemon = True
+                self._hide_timer.start()
+
         AppHelper.callAfter(_main_point)
 
     def point_at_percent(self, px: float, py: float, duration: float = 3.8, action: str = "point", label: str = ""):
@@ -161,6 +176,12 @@ class SwanPointerOverlay:
         """Immediately commands the hand to slide back up into the top bezel notch."""
         def _main_retract():
             self._eval_js("window.retract();")
+            with self._lock:
+                if hasattr(self, "_hide_timer") and self._hide_timer:
+                    self._hide_timer.cancel()
+                self._hide_timer = threading.Timer(0.55, self._order_out)
+                self._hide_timer.daemon = True
+                self._hide_timer.start()
         AppHelper.callAfter(_main_retract)
 
 

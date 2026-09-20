@@ -36,6 +36,14 @@
     height: 0;
     pointer-events: none;
     z-index: 9998;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .target-anchor.visible {
+    display: block;
+    opacity: 1;
   }
 
   .sonar-ring {
@@ -213,11 +221,11 @@
 <body>
 
 <div id="overlay">
-  <!-- Sonar Target Rings -->
+  <!-- Sonar Target Rings (Inactive and hidden when idle) -->
   <div class="target-anchor" id="target-anchor">
-    <div class="sonar-ring active-1" id="ring-1"></div>
-    <div class="sonar-ring active-2" id="ring-2"></div>
-    <div class="sonar-ring active-3" id="ring-3"></div>
+    <div class="sonar-ring" id="ring-1"></div>
+    <div class="sonar-ring" id="ring-2"></div>
+    <div class="sonar-ring" id="ring-3"></div>
     <div class="target-dot" id="target-dot"></div>
   </div>
 
@@ -329,6 +337,11 @@
   const targetDot = document.getElementById('target-dot');
   const tag = document.getElementById('pointer-tag');
   const tagText = document.getElementById('pointer-tag-text');
+  const rings = [
+    document.getElementById('ring-1'),
+    document.getElementById('ring-2'),
+    document.getElementById('ring-3')
+  ];
 
   let activeTimer = null;
   let animationFrameId = null;
@@ -415,10 +428,14 @@
     hand.classList.remove('tapping');
     hand.classList.add('hovering');
 
-    // Position reticle anchor
+    // Position reticle anchor and activate sonar rings
     targetAnchor.style.left = `${x}px`;
     targetAnchor.style.top = `${y}px`;
+    targetAnchor.classList.add('visible');
     targetDot.classList.add('visible');
+    rings.forEach((r, idx) => {
+      if (r) r.classList.add(`active-${idx + 1}`);
+    });
 
     // Handle tag label
     if (label && label.trim().length > 0) {
@@ -457,6 +474,10 @@
     targetY = -170; // Behind top bezel
 
     targetDot.classList.remove('visible');
+    targetAnchor.classList.remove('visible');
+    rings.forEach((r, idx) => {
+      if (r) r.classList.remove(`active-${idx + 1}`);
+    });
     tag.classList.remove('visible');
     hand.classList.remove('hovering', 'tapping');
 

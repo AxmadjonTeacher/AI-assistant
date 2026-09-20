@@ -64,15 +64,15 @@ class LiquidHUDWindow:
             target_screen = NSScreen.screens()[0] if NSScreen.screens() else None
 
         screen_frame = target_screen.frame() if target_screen else NSRect(NSPoint(0, 0), NSSize(1440, 900))
-        win_w = 480
-        win_h = 72
+        win_w = 560
+        win_h = 78
         x = screen_frame.origin.x + (screen_frame.size.width - win_w) / 2.0
         y = screen_frame.origin.y + screen_frame.size.height - win_h
         self._on_screen_frame = NSRect(NSPoint(x, y), NSSize(win_w, win_h))
 
     def _init_window(self):
-        win_w = 480
-        win_h = 72
+        win_w = 560
+        win_h = 78
         self._update_frame_for_current_screen()
 
         # Borderless non-activating panel
@@ -102,6 +102,7 @@ class LiquidHUDWindow:
         # Configure transparent WebKit view
         config = WKWebViewConfiguration.alloc().init()
         self.webview = WKWebView.alloc().initWithFrame_configuration_(NSRect(NSPoint(0, 0), NSSize(win_w, win_h)), config)
+        self.webview.setAutoresizingMask_(18) # NSViewWidthSizable | NSViewHeightSizable
         self.webview.setValue_forKey_(False, "drawsBackground")
         if hasattr(self.webview, "setUnderPageBackgroundColor_"):
             self.webview.setUnderPageBackgroundColor_(NSColor.clearColor())
