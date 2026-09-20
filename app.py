@@ -792,42 +792,15 @@ class SwanApp:
             if self.client:
                 asyncio.create_task(self.client.ensure_active_session())
 
-            if has_immediate_command:
-                # User spoke command together with wake word ("Swan, open Safari")!
-                print(f"⚡ [Immediate Command Mode] Continuous command detected. Streaming immediately.", flush=True)
-                self.state_machine.on_listening("Listening...")
-                self.hud.show(state="listening", status="LISTENING", subtitle="Listening...")
-            else:
-                # 1. Random voice prompt matching selected language, voice model and respectful preference
-                pcm_np, label = audio_prompts.get_random_prompt(
-                    language=config.language,
-                    voice_name=config.voice_name,
-                    respectful=config.respectful_address
-                )
-                self._active_prompt_label = label
-                self._active_action = ""
-                print(f"🎙️ [Wake Word Detected] Acknowledging with: '{label}'", flush=True)
+            # Ultra-fast immediate visual HUD & non-blocking chime (Zero latency stall)
+            self._active_action = ""
+            self._active_prompt_label = "Listening..."
+            self.audio_manager.play_chime()
+            self.state_machine.on_listening("Listening...")
+            self.hud.show(state="listening", status="LISTENING", subtitle="Listening...")
+            print(f"⚡ [Wake Detected] Instant listening triggered. Mid-speech reflex active.", flush=True)
 
-                # 2. Show top notch bar immediately
-                self.state_machine.on_wake(label)
-                self.hud.show(state="wake", status="SWAN", subtitle=label)
-
-                # 3. Play voice acknowledgment (trimmed, crisp ~1.0s)
-                if pcm_np is not None:
-                    self.audio_manager.set_interruption_callback(None)
-                    self.audio_manager.play_prompt(pcm_np)
-                    while self.audio_manager.is_playing() and not self._cancel_requested:
-                        await asyncio.sleep(0.02)
-                    self.audio_manager.set_interruption_callback(self.wake_detector.process_interruption)
-
-                if self._cancel_requested:
-                    return
-
-                # Clean 220ms decay buffer to prevent speaker hardware buffer/echo bleed into mic
-                if not self._interrupted:
-                    await asyncio.sleep(0.22)
-
-            # 4. Multi-turn conversational loop (back-and-forth)
+            # Multi-turn conversational loop (back-and-forth)
             conversation_active = True
             turn_number = 1
             last_reply = ""
@@ -858,8 +831,8 @@ class SwanApp:
                     turn_timeout = 5.5
 
                 # Record user speech with adaptive pause detection
-                # Do NOT include preroll on interruption (to avoid capturing old playback or the word 'Stop')
-                include_preroll = (has_immediate_command and turn_number == 1)
+                # Include mic preroll on turn 1 to immediately capture speech spoken right after or with wake word
+                include_preroll = (turn_number == 1 and not was_interrupted)
                 pcm_bytes, live_speech = await self._listen_for_speech(
                     initial_timeout=turn_timeout,
                     include_preroll=include_preroll,
@@ -869,12 +842,9 @@ class SwanApp:
                 if self._cancel_requested:
                     break
 
-                if has_immediate_command and turn_number == 1:
-                    has_command = self.audio_manager.has_speech(pcm_bytes, energy_threshold=0.015, min_speech_duration=0.25)
-                else:
-                    has_command = live_speech and len(pcm_bytes) >= 9600 and self.audio_manager.has_speech(
-                        pcm_bytes, energy_threshold=0.016, min_speech_duration=0.28
-                    )
+                has_command = (live_speech or include_preroll) and len(pcm_bytes) >= 4800 and self.audio_manager.has_speech(
+                    pcm_bytes, energy_threshold=0.014, min_speech_duration=0.20
+                )
 
                 if has_command:
                     # Check if native reflex was already dispatched and user has no secondary request
@@ -1245,10 +1215,9 @@ class SwanApp:
                     except Exception:
                         pass
                 elif self._active_action and not self._interrupted and not self._cancel_requested:
-                    action_confirm = "Buyrug'ingiz bajarildi, Janob."
-                    self._active_transcript = action_confirm
-                    self._last_assistant_speech = action_confirm
-                    print(f"ℹ️ [Auto Confirmation] Action was executed: {self._active_action}", flush=True)
+                    # Native OS action was completed cleanly - keep completely silent (no spoken chatter)
+                    self._active_transcript = ""
+                    print(f"ℹ️ [Silent Action Completed] Action executed cleanly without voice response: {self._active_action}", flush=True)
             except asyncio.CancelledError:
                 print("🛑 [Turn Task] Gemini turn streaming aborted by user interruption.", flush=True)
                 if self._active_transcript:

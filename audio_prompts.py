@@ -47,7 +47,7 @@ class AudioPromptsManager:
             ("aoede", "en", True, "ack_listening.wav", "Listening, sir."),
             ("aoede", "en", False, "ack_en_listening_plain.wav", "Listening."),
 
-            ("aoede", "uz", True, "ack_uz_eshitaman.wav", "Eshitaman janob"),
+            ("aoede", "uz", True, "ack_uz_buyuring.wav", "Buyuring"),
             ("aoede", "uz", False, "ack_uz_eshitaman_plain.wav", "Eshitaman"),
 
             ("aoede", "tr", True, "ack_tr_emredersiniz.wav", "Emredersiniz, efendim."),
@@ -60,7 +60,7 @@ class AudioPromptsManager:
             ("charon", "en", True, "charon_en_listening_sir.wav", "Listening, sir."),
             ("charon", "en", False, "charon_en_listening_plain.wav", "Listening."),
 
-            ("charon", "uz", True, "charon_uz_eshitaman.wav", "Eshitaman janob"),
+            ("charon", "uz", True, "charon_uz_buyuring.wav", "Buyuring"),
             ("charon", "uz", False, "charon_uz_eshitaman_plain.wav", "Eshitaman"),
 
             ("charon", "tr", True, "charon_tr_emredersiniz.wav", "Emredersiniz, efendim."),

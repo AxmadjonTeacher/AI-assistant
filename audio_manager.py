@@ -54,6 +54,8 @@ class AudioManager:
         self._playback_thread = None
         self._wake_thread = None
         self._wake_queue = queue.Queue(maxsize=150)
+        self._stream_chunk_queue = queue.Queue(maxsize=150)
+        self._stream_chunk_thread = None
         self.wake_word_callback = None
         self.interruption_callback = None
         self.recording_chunk_callback = None
@@ -102,6 +104,9 @@ class AudioManager:
         self._wake_thread = threading.Thread(target=self._wake_worker, daemon=True)
         self._wake_thread.start()
 
+        self._stream_chunk_thread = threading.Thread(target=self._stream_chunk_worker, daemon=True)
+        self._stream_chunk_thread.start()
+
     def _mic_callback(self, indata, frames, time_info, status):
         chunk = indata.copy()
         arr = chunk.astype(np.float32)
@@ -114,8 +119,8 @@ class AudioManager:
                 self._record_buffer.append(chunk)
                 if self.recording_chunk_callback:
                     try:
-                        self.recording_chunk_callback(chunk.tobytes())
-                    except Exception:
+                        self._stream_chunk_queue.put_nowait(chunk.tobytes())
+                    except queue.Full:
                         pass
 
         # Enqueue mic chunks for idle wake detection OR playback interruption detection
@@ -124,6 +129,19 @@ class AudioManager:
                 try:
                     self._wake_queue.put_nowait(chunk.tobytes())
                 except queue.Full:
+                    pass
+
+    def _stream_chunk_worker(self):
+        while self._running:
+            try:
+                pcm_bytes = self._stream_chunk_queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            cb = self.recording_chunk_callback
+            if cb and pcm_bytes:
+                try:
+                    cb(pcm_bytes)
+                except Exception:
                     pass
 
     def _wake_worker(self):
@@ -243,6 +261,11 @@ class AudioManager:
         self.interrupt_playback()
         self._interrupted_playback = False
         self._play_queue.put(pcm_np)
+
+    def play_chime(self):
+        """Immediately enqueues a short, crisp, non-blocking 70ms wake chime."""
+        if hasattr(self, "start_chime") and self.start_chime is not None:
+            self._play_queue.put(self.start_chime)
 
     def get_active_rms(self) -> float:
         """Returns the current active audio energy (mic while recording, speaker while playing)."""
