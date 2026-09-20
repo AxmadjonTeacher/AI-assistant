@@ -56,6 +56,7 @@ class AudioManager:
         self._wake_queue = queue.Queue(maxsize=150)
         self.wake_word_callback = None
         self.interruption_callback = None
+        self.recording_chunk_callback = None
         self.speaker_rms = 0.0
 
         self._start()
@@ -65,6 +66,9 @@ class AudioManager:
 
     def set_interruption_callback(self, cb):
         self.interruption_callback = cb
+
+    def set_recording_chunk_callback(self, cb):
+        self.recording_chunk_callback = cb
 
     def _start(self):
         try:
@@ -108,6 +112,11 @@ class AudioManager:
             self._preroll_buffer.append(chunk)
             if self._recording:
                 self._record_buffer.append(chunk)
+                if self.recording_chunk_callback:
+                    try:
+                        self.recording_chunk_callback(chunk.tobytes())
+                    except Exception:
+                        pass
 
         # Enqueue mic chunks for idle wake detection OR playback interruption detection
         if not self._recording:

@@ -136,6 +136,7 @@ from wake_word_detector import WakeWordDetector
 from audio_prompts import audio_prompts
 from pointer_overlay import get_pointer_overlay
 from report_window import get_report_window
+from reflex_engine import reflex_engine, execute_reflex_action_sync, ReflexDecision
 
 class SwanApp:
     def __init__(self):
@@ -218,6 +219,7 @@ class SwanApp:
         self._active_action = ""
         self._paused_media_on_wake = False
         self._media_explicitly_stopped = False
+        self._reflex_dispatched_this_turn: Optional[ReflexDecision] = None
 
     def _on_state_machine_update(self, state: AssistantState, label: str, detail: str):
         """Dispatches state machine updates to both the notch HUD and menu bar."""
@@ -757,6 +759,19 @@ class SwanApp:
         self._interrupted = False
         self.wake_detector.enabled = False
         has_immediate_command = bool(suffix and len(suffix.strip().split()) >= 1 and suffix.strip() != "[unk]")
+
+        # Immediate Reflex Evaluation on wake suffix ("Swan, open Terminal")
+        if has_immediate_command:
+            decision = reflex_engine.evaluate(suffix)
+            if decision and decision.is_reflex_action and decision.confidence >= 0.88:
+                action_key = f"{decision.action_type}:{decision.params}"
+                if not reflex_engine.has_dispatched(action_key):
+                    reflex_engine.mark_dispatched(action_key)
+                    self._reflex_dispatched_this_turn = decision
+                    self._active_action = decision.display_label
+                    print(f"⚡ [Wake Suffix Reflex Trigger] '{suffix}' -> {decision.choice} ({decision.confidence:.2f})", flush=True)
+                    threading.Thread(target=execute_reflex_action_sync, args=(decision,), daemon=True).start()
+
         if self._loop and self._loop.is_running():
             self._active_turn_future = asyncio.run_coroutine_threadsafe(
                 self._handle_wake_cycle(has_immediate_command=has_immediate_command),
@@ -860,6 +875,19 @@ class SwanApp:
                     )
 
                 if has_command:
+                    # Check if native reflex was already dispatched and user has no secondary request
+                    if self._reflex_dispatched_this_turn:
+                        decision = self._reflex_dispatched_this_turn
+                        if not decision.has_followup:
+                            print(f"⚡ [Instant Reflex Completed] Native action '{decision.action_type}' finished mid-speech. Completing turn immediately without cloud lag.", flush=True)
+                            self.state_machine.on_action(decision.display_label)
+                            self.hud.show(state="action", status="DONE", subtitle=decision.display_label)
+                            await asyncio.sleep(0.75)
+                            last_reply = decision.display_label
+                            turn_number += 1
+                            self._reflex_dispatched_this_turn = None
+                            continue
+
                     last_reply = await self._process_gemini_turn(pcm_bytes)
                     if self._cancel_requested:
                         break
@@ -914,6 +942,44 @@ class SwanApp:
         speech_start_time = time.time()
         speech_frames = 0
         last_speech_time = time.time()
+
+        # Real-time streaming Reflex Recognizer (System 1 - The Reflexes)
+        command_rec = self.wake_detector.create_command_recognizer()
+
+        def _on_speech_chunk(chunk_bytes: bytes):
+            if self._cancel_requested or self._interrupted or not command_rec:
+                return
+            try:
+                text = ""
+                if command_rec.AcceptWaveform(chunk_bytes):
+                    res = json.loads(command_rec.Result())
+                    text = res.get("text", "").strip()
+                else:
+                    raw = command_rec.PartialResult()
+                    if raw and '"partial" : ""' not in raw:
+                        res = json.loads(raw)
+                        text = res.get("partial", "").strip()
+
+                if text:
+                    decision = reflex_engine.evaluate(text)
+                    if decision and decision.is_reflex_action and decision.confidence >= 0.88:
+                        action_key = f"{decision.action_type}:{decision.params}"
+                        if not reflex_engine.has_dispatched(action_key):
+                            reflex_engine.mark_dispatched(action_key)
+                            self._reflex_dispatched_this_turn = decision
+                            print(f"⚡ [MID-SPEECH REFLEX TRIGGER] '{text}' -> {decision.choice} ({decision.confidence:.2f})", flush=True)
+
+                            self._active_action = decision.display_label
+                            def _update_ui():
+                                self.state_machine.on_action(decision.display_label)
+                                self.hud.show(state="action", status="ACTION", subtitle=decision.display_label)
+                            AppHelper.callAfter(_update_ui)
+
+                            threading.Thread(target=execute_reflex_action_sync, args=(decision,), daemon=True).start()
+            except Exception:
+                pass
+
+        self.audio_manager.set_recording_chunk_callback(_on_speech_chunk)
 
         # Dynamic ambient noise floor tracker
         ambient_floor = max(0.010, self.audio_manager.current_rms)
@@ -979,6 +1045,7 @@ class SwanApp:
         if time.time() - start_time >= max_duration and speech_started:
             print(f"⏱️ [Max Duration Limit] Finished recording after {max_duration:.1f}s cap.", flush=True)
 
+        self.audio_manager.set_recording_chunk_callback(None)
         return self.audio_manager.stop_recording(play_chime=False), speech_started
 
     # --- PUSH-TO-TALK HOTKEY FLOW ---
@@ -1006,8 +1073,49 @@ class SwanApp:
         self.state_machine.on_listening("Gapiring...")
         self.hud.show(state="listening", status="LISTENING", subtitle="Gapiring...")
 
+        # Real-time streaming Reflex Recognizer during push-to-talk hold
+        reflex_engine.reset_turn()
+        self._reflex_dispatched_this_turn = None
+        hotkey_rec = self.wake_detector.create_command_recognizer()
+
+        def _on_hotkey_chunk(chunk_bytes: bytes):
+            if self._cancel_requested or self._interrupted or not hotkey_rec:
+                return
+            try:
+                text = ""
+                if hotkey_rec.AcceptWaveform(chunk_bytes):
+                    res = json.loads(hotkey_rec.Result())
+                    text = res.get("text", "").strip()
+                else:
+                    raw = hotkey_rec.PartialResult()
+                    if raw and '"partial" : ""' not in raw:
+                        res = json.loads(raw)
+                        text = res.get("partial", "").strip()
+
+                if text:
+                    decision = reflex_engine.evaluate(text)
+                    if decision and decision.is_reflex_action and decision.confidence >= 0.88:
+                        action_key = f"{decision.action_type}:{decision.params}"
+                        if not reflex_engine.has_dispatched(action_key):
+                            reflex_engine.mark_dispatched(action_key)
+                            self._reflex_dispatched_this_turn = decision
+                            print(f"⚡ [HOTKEY MID-SPEECH REFLEX TRIGGER] '{text}' -> {decision.choice} ({decision.confidence:.2f})", flush=True)
+
+                            self._active_action = decision.display_label
+                            def _update_ui():
+                                self.state_machine.on_action(decision.display_label)
+                                self.hud.show(state="action", status="ACTION", subtitle=decision.display_label)
+                            AppHelper.callAfter(_update_ui)
+
+                            threading.Thread(target=execute_reflex_action_sync, args=(decision,), daemon=True).start()
+            except Exception:
+                pass
+
+        self.audio_manager.set_recording_chunk_callback(_on_hotkey_chunk)
+
     def _on_hotkey_release(self):
         print(f"⌨️ [Hotkey release] running={self._running}, busy={self._busy}", flush=True)
+        self.audio_manager.set_recording_chunk_callback(None)
         if not self._running or self._busy:
             return
         duration = time.time() - self._hotkey_recording_start
@@ -1015,8 +1123,16 @@ class SwanApp:
         print(f"⌨️ [Hotkey release] duration={duration:.2f}s, pcm_len={len(pcm)}, has_speech={self.audio_manager.has_speech(pcm)}", flush=True)
 
         if duration < config.min_recording_seconds or len(pcm) < 3200 or not self.audio_manager.has_speech(pcm):
-            self.state_machine.on_idle()
-            self.hud.hide(delay=0.2)
+            # Check if reflex action was already fired during hold
+            if self._reflex_dispatched_this_turn:
+                decision = self._reflex_dispatched_this_turn
+                self.state_machine.on_action(decision.display_label)
+                self.hud.show(state="action", status="DONE", subtitle=decision.display_label)
+                self.hud.hide(delay=0.75)
+                self._reflex_dispatched_this_turn = None
+            else:
+                self.state_machine.on_idle()
+                self.hud.hide(delay=0.2)
             self.wake_detector.reset()
             self.wake_detector.enabled = True
             return
@@ -1029,6 +1145,20 @@ class SwanApp:
     async def _handle_hotkey_turn(self, pcm_bytes: bytes):
         try:
             self._interrupted = False
+
+            # Check if reflex already fired with no follow-up
+            if self._reflex_dispatched_this_turn:
+                decision = self._reflex_dispatched_this_turn
+                if not decision.has_followup:
+                    print(f"⚡ [Instant Hotkey Reflex Completed] Native action '{decision.action_type}' finished. Completing immediately.", flush=True)
+                    self.state_machine.on_action(decision.display_label)
+                    self.hud.show(state="action", status="DONE", subtitle=decision.display_label)
+                    await asyncio.sleep(0.75)
+                    self.state_machine.on_idle()
+                    self.hud.hide(delay=0.3)
+                    self._reflex_dispatched_this_turn = None
+                    return
+
             reply = await self._process_gemini_turn(pcm_bytes)
             if self._cancel_requested or self._interrupted:
                 return

@@ -111,8 +111,15 @@ class SwanReportWindow:
         self.delegate = ReportWindowDelegate.alloc().init()
         self.window.setDelegate_(self.delegate)
 
+        # Hide native titlebar buttons so custom sleek macOS traffic-light control in HTML header works seamlessly
+        for btn_id in [0, 1, 2]:
+            btn = self.window.standardWindowButton_(btn_id)
+            if btn:
+                btn.setHidden_(True)
+
         config = WKWebViewConfiguration.alloc().init()
         self.webview = WKWebView.alloc().initWithFrame_configuration_(rect, config)
+        self.webview.setAutoresizingMask_(18)  # NSViewWidthSizable | NSViewHeightSizable
         self.webview.setValue_forKey_(False, "drawsBackground")
         if hasattr(self.webview, "setUnderPageBackgroundColor_"):
             self.webview.setUnderPageBackgroundColor_(NSColor.clearColor())

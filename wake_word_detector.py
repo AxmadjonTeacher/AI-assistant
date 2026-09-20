@@ -128,6 +128,15 @@ class WakeWordDetector:
         except Exception as e:
             print(f"[ERROR] Failed to initialize Vosk model: {e}", flush=True)
 
+    def create_command_recognizer(self) -> Optional[vosk.KaldiRecognizer]:
+        """Creates an open-vocabulary recognizer for streaming speech analysis."""
+        if self.model:
+            try:
+                return vosk.KaldiRecognizer(self.model, self.sample_rate)
+            except Exception as e:
+                print(f"⚠️ [WakeWordDetector] Failed to create command recognizer: {e}", flush=True)
+        return None
+
     def reset(self):
         with self._lock:
             self._partial_swan_count = 0

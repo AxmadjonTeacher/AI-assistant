@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Swan Intelligence Report</title>
 <style>
   * {
@@ -16,31 +17,36 @@
     width: 100vw;
     height: 100vh;
     overflow: hidden;
-    background: transparent;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-    color: #f1f5f9;
+    background: transparent !important;
+    background-color: transparent !important;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+    color: rgba(255, 255, 255, 0.88);
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* Main Glassmorphic Container */
+  /* macOS Sequoia Frosted Obsidian Glass Container */
   .report-panel {
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: rgba(15, 12, 26, 0.85);
-    backdrop-filter: blur(45px) saturate(190%);
-    -webkit-backdrop-filter: blur(45px) saturate(190%);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 20px;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    background: rgba(18, 18, 24, 0.75);
+    backdrop-filter: blur(50px) saturate(200%);
+    -webkit-backdrop-filter: blur(50px) saturate(200%);
+    border: 0.5px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow: 
+      0 24px 64px -8px rgba(0, 0, 0, 0.60),
+      0 8px 24px -4px rgba(0, 0, 0, 0.40),
+      inset 0 0.5px 0 0 rgba(255, 255, 255, 0.18);
     overflow: hidden;
-    animation: panelPopIn 0.38s cubic-bezier(0.16, 1.08, 0.32, 1.02);
+    animation: panelPopIn 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   @keyframes panelPopIn {
     0% {
       opacity: 0;
-      transform: scale(0.96) translateX(-20px);
+      transform: scale(0.97) translateX(-12px);
     }
     100% {
       opacity: 1;
@@ -48,16 +54,16 @@
     }
   }
 
-  /* Window Title / Drag Bar */
+  /* Window Title / Drag Header */
   .panel-header {
-    height: 52px;
-    min-height: 52px;
-    padding: 0 16px;
+    height: 46px;
+    min-height: 46px;
+    padding: 0 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
     -webkit-app-region: drag;
     user-select: none;
     -webkit-user-select: none;
@@ -66,63 +72,63 @@
   .header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     -webkit-app-region: no-drag;
   }
 
-  /* Close Button (macOS style frosted pill) */
+  /* Minimalist SF Symbol Close Button */
   .btn-close {
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
-    border: none;
-    background: rgba(239, 68, 68, 0.18);
-    color: #f87171;
+    border: 0.5px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 13px;
-    font-weight: 700;
-    transition: all 0.2s ease;
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .btn-close:hover {
-    background: rgba(239, 68, 68, 0.9);
-    color: #ffffff;
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+    background: rgba(255, 255, 255, 0.14);
+    color: #FFFFFF;
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  .btn-close:active {
+    transform: scale(0.92);
   }
 
-  /* Brand / Source Badge */
+  /* Source Intelligence Badge with Apple Intelligence Sparkle Glyph */
   .brand-badge {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 4px 10px;
-    background: rgba(56, 189, 248, 0.12);
-    border: 1px solid rgba(56, 189, 248, 0.25);
-    border-radius: 20px;
-    font-size: 11.5px;
-    font-weight: 600;
-    color: #38bdf8;
-    letter-spacing: 0.2px;
+    gap: 6px;
+    padding: 3px 9px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 0.5px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.72);
+    letter-spacing: -0.1px;
   }
-
-  .swan-mini-icon {
-    width: 14px;
-    height: 14px;
-    filter: drop-shadow(0 0 4px #38bdf8);
+  .source-svg {
+    width: 11px;
+    height: 11px;
+    fill: currentColor;
+    color: rgba(255, 255, 255, 0.65);
   }
 
   .header-center {
-    font-size: 12.5px;
-    font-weight: 600;
-    color: #94a3b8;
-    letter-spacing: 0.3px;
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.42);
+    letter-spacing: -0.1px;
     text-overflow: ellipsis;
     overflow: hidden;
     white-space: nowrap;
-    max-width: 180px;
+    max-width: 190px;
   }
 
   .header-actions {
@@ -132,166 +138,170 @@
     -webkit-app-region: no-drag;
   }
 
-  /* Copy Button */
+  /* SF Symbol Copy Button */
   .btn-copy {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 12px;
-    color: #f1f5f9;
-    font-size: 12px;
-    font-weight: 600;
+    gap: 5px;
+    padding: 5px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 0.5px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: -0.1px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   }
-
   .btn-copy:hover {
-    background: rgba(56, 189, 248, 0.18);
-    border-color: rgba(56, 189, 248, 0.4);
-    color: #38bdf8;
-    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #FFFFFF;
   }
-
+  .btn-copy:active {
+    transform: scale(0.94);
+  }
   .btn-copy.copied {
-    background: rgba(16, 185, 129, 0.25);
-    border-color: rgba(16, 185, 129, 0.5);
-    color: #34d399;
-    box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+    background: rgba(48, 209, 88, 0.14);
+    border-color: rgba(48, 209, 88, 0.35);
+    color: #30D158;
   }
 
   /* Scrollable Body Content */
   .panel-body {
     flex: 1;
     overflow-y: auto;
-    padding: 24px 28px;
+    padding: 22px 26px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
   }
 
+  /* Native macOS Overlay Scrollbar */
   .panel-body::-webkit-scrollbar {
-    width: 6px;
+    width: 5px;
   }
   .panel-body::-webkit-scrollbar-track {
     background: transparent;
   }
   .panel-body::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
   }
   .panel-body::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.25);
   }
 
-  /* Document Meta Header */
+  /* Document Typography */
   .doc-title {
-    font-size: 22px;
-    font-weight: 700;
+    font-size: 20px;
+    font-weight: 600;
     line-height: 1.3;
-    color: #f8fafc;
-    letter-spacing: -0.3px;
+    color: #FFFFFF;
+    letter-spacing: -0.4px;
   }
 
+  /* Inline Typographic Metadata (Zero Emojis) */
   .meta-row {
     display: flex;
     align-items: center;
-    gap: 14px;
-    font-size: 11.5px;
-    color: #94a3b8;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.40);
+    letter-spacing: -0.05px;
     padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+  }
+  .meta-sep {
+    font-size: 8px;
+    opacity: 0.4;
   }
 
-  .meta-pill {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  /* Rendered Markdown Typography */
+  /* Markdown Typography & Hierarchies */
   .markdown-body {
-    font-size: 13.5px;
-    line-height: 1.68;
-    color: #e2e8f0;
+    font-size: 13px;
+    line-height: 1.62;
+    color: rgba(255, 255, 255, 0.82);
   }
 
   .markdown-body h1 {
-    font-size: 18px;
-    font-weight: 700;
-    color: #f8fafc;
-    margin: 18px 0 10px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 16px;
+    font-weight: 600;
+    color: #FFFFFF;
+    letter-spacing: -0.3px;
+    margin: 18px 0 8px 0;
+    padding-bottom: 4px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
   }
   .markdown-body h2 {
-    font-size: 16px;
-    font-weight: 700;
-    color: #38bdf8;
-    margin: 16px 0 8px 0;
-  }
-  .markdown-body h3 {
     font-size: 14.5px;
     font-weight: 600;
-    color: #a855f7;
-    margin: 14px 0 6px 0;
+    color: rgba(255, 255, 255, 0.94);
+    letter-spacing: -0.2px;
+    margin: 16px 0 6px 0;
+  }
+  .markdown-body h3 {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    margin: 14px 0 4px 0;
   }
   .markdown-body p {
-    margin-bottom: 12px;
+    margin-bottom: 11px;
   }
   .markdown-body ul, .markdown-body ol {
-    margin: 8px 0 14px 22px;
+    margin: 6px 0 12px 20px;
   }
   .markdown-body li {
-    margin-bottom: 6px;
+    margin-bottom: 5px;
   }
   .markdown-body strong {
-    color: #ffffff;
+    color: #FFFFFF;
     font-weight: 600;
   }
   .markdown-body em {
-    color: #cbd5e1;
+    color: rgba(255, 255, 255, 0.70);
   }
   .markdown-body blockquote {
     margin: 12px 0;
-    padding: 10px 16px;
-    background: rgba(56, 189, 248, 0.08);
-    border-left: 3px solid #38bdf8;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 2px solid rgba(255, 255, 255, 0.25);
     border-radius: 4px;
-    color: #bae6fd;
-    font-size: 13px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12.5px;
   }
   .markdown-body pre {
     margin: 12px 0;
-    padding: 12px 16px;
-    background: rgba(2, 6, 23, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 0.5px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
     overflow-x: auto;
-    font-family: "SF Mono", Menlo, Consolas, Monaco, monospace;
-    font-size: 12px;
-    color: #f1f5f9;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.90);
   }
   .markdown-body code {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.07);
+    padding: 2px 5px;
     border-radius: 4px;
-    font-family: "SF Mono", Menlo, Consolas, Monaco, monospace;
-    font-size: 12px;
-    color: #38bdf8;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.90);
   }
   .markdown-body pre code {
     background: transparent;
     padding: 0;
-    color: #f1f5f9;
+    color: inherit;
   }
   .markdown-body hr {
     border: none;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-    margin: 18px 0;
+    height: 0.5px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 16px 0;
   }
 </style>
 </head>
@@ -301,10 +311,17 @@
   <!-- Header / Window Controls -->
   <div class="panel-header">
     <div class="header-left">
-      <button class="btn-close" id="btn-close" title="Close Window">✕</button>
+      <!-- SF Symbol: xmark -->
+      <button class="btn-close" id="btn-close" title="Close Window" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+          <path d="M1.5 1.5L8.5 8.5M8.5 1.5L1.5 8.5"/>
+        </svg>
+      </button>
+
+      <!-- Source Badge with Apple Intelligence Sparkle Glyph -->
       <div class="brand-badge" id="source-badge">
-        <svg class="swan-mini-icon" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+        <svg class="source-svg" viewBox="0 0 16 16">
+          <path d="M8 0.5C8 4.64 4.64 8 0.5 8C4.64 8 8 11.36 8 15.5C8 11.36 11.36 8 15.5 8C11.36 8 8 4.64 8 0.5Z"/>
         </svg>
         <span id="source-label">Research Agent</span>
       </div>
@@ -313,8 +330,12 @@
     <div class="header-center" id="header-subtitle">Intelligence Report</div>
 
     <div class="header-actions">
-      <button class="btn-copy" id="btn-copy" title="Copy Full Report">
-        <span id="copy-icon">📋</span>
+      <!-- SF Symbol: doc.on.doc -->
+      <button class="btn-copy" id="btn-copy" title="Copy Content">
+        <svg class="copy-icon" id="copy-icon-svg" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5.5" y="5.5" width="8" height="8" rx="2"/>
+          <path d="M3.5 10.5H2.5C1.94772 10.5 1.5 10.0523 1.5 9.5V2.5C1.5 1.94772 1.94772 1.5 2.5 1.5H9.5C10.0523 1.5 10.5 1.94772 10.5 2.5V3.5"/>
+        </svg>
         <span id="copy-text">Copy</span>
       </button>
     </div>
@@ -324,23 +345,17 @@
   <div class="panel-body">
     <h1 class="doc-title" id="report-title">Research Summary</h1>
     
+    <!-- Clean Typographic Metadata Row (Zero Emojis) -->
     <div class="meta-row">
-      <div class="meta-pill">
-        <span>⏱️</span>
-        <span id="meta-time">Just now</span>
-      </div>
-      <div class="meta-pill">
-        <span>📄</span>
-        <span id="meta-words">0 words</span>
-      </div>
-      <div class="meta-pill">
-        <span>✨</span>
-        <span>Verified Findings</span>
-      </div>
+      <span id="meta-time">Just now</span>
+      <span class="meta-sep">&bull;</span>
+      <span id="meta-words">0 words</span>
+      <span class="meta-sep">&bull;</span>
+      <span id="meta-tier">Swan Intelligence</span>
     </div>
 
     <div class="markdown-body" id="report-content">
-      <!-- Formatted content inserted dynamically -->
+      <!-- Dynamically populated formatted markdown content -->
     </div>
   </div>
 </div>
@@ -348,7 +363,6 @@
 <script>
   let rawContentText = "";
 
-  // Minimal fast Markdown parser
   function parseMarkdown(md) {
     if (!md) return "";
     let html = md
@@ -366,7 +380,7 @@
 
     // Headers
     html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gim, '## $1</h2>');
+    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
     html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
 
     // Blockquotes
@@ -382,12 +396,10 @@
     // Unordered Lists
     html = html.replace(/^\s*[-*]\s+(.*)$/gim, '<li>$1</li>');
     html = html.replace(/(<li>.*<\/li>)/gms, '<ul>$1</ul>');
-    // Fix nested ul tags
     html = html.replace(/<\/ul>\s*<ul>/g, '');
 
     // Paragraphs
     const lines = html.split('\n');
-    let inBlock = false;
     const finalLines = [];
 
     for (let line of lines) {
@@ -406,14 +418,11 @@
     return finalLines.join('\n');
   }
 
-  /**
-   * Sets and renders report in the window.
-   */
   window.setReport = function(title, content, source) {
     rawContentText = content || "";
     document.getElementById('report-title').textContent = title || "Report";
     document.getElementById('source-label').textContent = source || "Swan Agent";
-    document.getElementById('header-subtitle').textContent = (title || "").slice(0, 24);
+    document.getElementById('header-subtitle').textContent = (title || "").slice(0, 26);
 
     const now = new Date();
     document.getElementById('meta-time').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -429,31 +438,37 @@
     window.location.href = "swan://closeWindow";
   });
 
+  // SF Symbols Doc-on-Doc vs Checkmark SVGs
+  const svgDocOnDoc = `
+    <rect x="5.5" y="5.5" width="8" height="8" rx="2"/>
+    <path d="M3.5 10.5H2.5C1.94772 10.5 1.5 10.0523 1.5 9.5V2.5C1.5 1.94772 1.94772 1.5 2.5 1.5H9.5C10.0523 1.5 10.5 1.94772 10.5 2.5V3.5"/>
+  `;
+  const svgCheckmark = `
+    <path d="M3 8.5L6 11.5L13 4.5" stroke-width="1.6"/>
+  `;
+
   // Copy Button Handler
   document.getElementById('btn-copy').addEventListener('click', () => {
     const copyText = `# ${document.getElementById('report-title').textContent}\n\n${rawContentText}`;
     
-    // Copy to clipboard
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(copyText);
     }
-    // Also notify native Cocoa layer to ensure clipboard is populated
     window.location.href = "swan://copyContent";
 
-    // Visual feedback
     const btn = document.getElementById('btn-copy');
     const label = document.getElementById('copy-text');
-    const icon = document.getElementById('copy-icon');
+    const iconSvg = document.getElementById('copy-icon-svg');
 
     btn.classList.add('copied');
-    label.textContent = "Copied!";
-    icon.textContent = "✓";
+    label.textContent = "Copied";
+    iconSvg.innerHTML = svgCheckmark;
 
     setTimeout(() => {
       btn.classList.remove('copied');
       label.textContent = "Copy";
-      icon.textContent = "📋";
-    }, 2200);
+      iconSvg.innerHTML = svgDocOnDoc;
+    }, 2000);
   });
 </script>
 </body>

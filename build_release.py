@@ -72,6 +72,7 @@ def main():
         f"--hidden-import 'state_machine' " \
         f"--hidden-import 'pointer_overlay' " \
         f"--hidden-import 'report_window' " \
+        f"--hidden-import 'reflex_engine' " \
         f"--hidden-import 'docx' " \
         f"--hidden-import 'reportlab' " \
         f"--hidden-import 'pptx' " \
@@ -113,8 +114,8 @@ def main():
 
     pl["CFBundleDisplayName"] = APP_NAME
     pl["CFBundleIdentifier"] = BUNDLE_ID
-    pl["CFBundleShortVersionString"] = "1.3.1"
-    pl["CFBundleVersion"] = "1.3.1"
+    pl["CFBundleShortVersionString"] = "1.4.0"
+    pl["CFBundleVersion"] = "1.4.0"
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."
