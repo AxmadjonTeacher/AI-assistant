@@ -134,7 +134,6 @@ from menu_bar import SwanMenuBar
 from settings_window import SettingsWindow
 from wake_word_detector import WakeWordDetector
 from audio_prompts import audio_prompts
-from pointer_overlay import get_pointer_overlay
 from report_window import get_report_window
 from reflex_engine import reflex_engine, execute_reflex_action_sync, ReflexDecision
 
@@ -164,7 +163,6 @@ class SwanApp:
         self.state_machine = AssistantStateMachine()
         self.state_machine.add_listener(self._on_state_machine_update)
         self.agent_hud = init_agent_hud()
-        self.pointer_overlay = get_pointer_overlay()
         self.report_window = get_report_window()
         self.menu_bar = SwanMenuBar(
             on_ask_swan=self.trigger_assistant,
@@ -276,6 +274,13 @@ class SwanApp:
         self.menu_bar.set_voice(config.voice_name)
         self.menu_bar.set_respectful(config.respectful_address)
         print(" Swan is ready! Say 'Swan' or 'Hey Swan', or hold Option + Shift.")
+
+        # Start Laya Neural System 1 Decision Engine in background
+        try:
+            from laya_engine import laya_engine
+            laya_engine.start_background_loading(model_type="multilingual")
+        except Exception as e:
+            print(f"⚠️ [LayaEngine] Background initialization notice: {e}", flush=True)
 
         # Background tasks
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
@@ -699,9 +704,6 @@ class SwanApp:
             return "Designing Slides..."
         elif name in ["generate_image", "create_image", "draw_image", "draw_picture", "make_picture"]:
             return "Creating Picture..."
-        elif name in ["point_on_screen", "point_at", "pointer", "point"]:
-            desc = (args or {}).get("description", "")
-            return f"Pointing to '{desc[:18]}'..." if desc else "Pointing on Screen 👆"
         elif name in ["search_and_gather_info", "research_agent", "gather_info", "deep_research"]:
             q = (args or {}).get("query", "")
             return f"Researching '{q[:18]}'..." if q else "Researching Web 🌐"

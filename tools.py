@@ -2370,46 +2370,11 @@ def get_agent_status(task_id: str = "") -> dict:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def point_on_screen(description: str = "", x: Optional[int] = None, y: Optional[int] = None, action: str = "point", duration: float = 3.8) -> dict:
-    """Deploys Swan's independent custom hand cursor sliding down from the top bezel notch
-
-    to point at, tap, or highlight a specific coordinate, button, code error, or region on screen.
-    """
+def stop_agent(agent_type: str = "") -> dict:
+    """Stops, halts, or cancels running background AI agents (Blender 3D director, image creator, audio transcriber, YouTube summarizer, web research, documents, slides)."""
     try:
-        from pointer_overlay import get_pointer_overlay
-        overlay = get_pointer_overlay()
-        if not overlay:
-            return {"status": "error", "message": "Pointer overlay window is not available."}
-
-        # If coordinates are omitted, compute smart positions based on screen bounds and description
-        if x is None or y is None:
-            from Cocoa import NSScreen
-            screen = NSScreen.mainScreen()
-            w = screen.frame().size.width if screen else 1440
-            h = screen.frame().size.height if screen else 900
-            desc_l = (description or "").lower()
-            if any(k in desc_l for k in ["top right", "yuqori o'ng"]):
-                x, y = int(w * 0.82), int(h * 0.16)
-            elif any(k in desc_l for k in ["top left", "yuqori chap"]):
-                x, y = int(w * 0.16), int(h * 0.16)
-            elif any(k in desc_l for k in ["bottom right", "pastki o'ng"]):
-                x, y = int(w * 0.82), int(h * 0.82)
-            elif any(k in desc_l for k in ["bottom left", "pastki chap"]):
-                x, y = int(w * 0.16), int(h * 0.82)
-            elif any(k in desc_l for k in ["dock", "pastda", "bottom"]):
-                x, y = int(w * 0.50), int(h * 0.92)
-            elif any(k in desc_l for k in ["left", "chap"]):
-                x, y = int(w * 0.28), int(h * 0.48)
-            elif any(k in desc_l for k in ["right", "o'ng"]):
-                x, y = int(w * 0.72), int(h * 0.48)
-            else:
-                x, y = int(w * 0.50), int(h * 0.45)
-
-        overlay.point_at(x=int(x), y=int(y), duration=float(duration), action=action, label=description[:24])
-        return {
-            "status": "success",
-            "message": f"Pointer deployed from top bezel to point at ({x}, {y}): '{description}'."
-        }
+        from agent_manager import agent_manager
+        return agent_manager.cancel_all_agents()
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -2440,14 +2405,6 @@ def show_report_window(title: str, content: str, source: str = "Swan Intelligenc
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def stop_agent(agent_type: str = "") -> dict:
-    """Stops, halts, or cancels running background AI agents (Blender 3D director, image creator, audio transcriber, YouTube summarizer, web research, documents, slides)."""
-    try:
-        from agent_manager import agent_manager
-        return agent_manager.cancel_all_agents()
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 # Dispatch table
 TOOL_HANDLERS = {
     "stop_agent": stop_agent,
@@ -2455,10 +2412,6 @@ TOOL_HANDLERS = {
     "halt_agent": stop_agent,
     "kill_agent": stop_agent,
     "abort_agent": stop_agent,
-    "point_on_screen": point_on_screen,
-    "point_at": point_on_screen,
-    "pointer": point_on_screen,
-    "point": point_on_screen,
     "search_and_gather_info": search_and_gather_info,
     "research_agent": search_and_gather_info,
     "gather_info": search_and_gather_info,
@@ -3307,36 +3260,6 @@ def get_jarvis_tools() -> list[types.Tool]:
                     )
                 },
                 required=["title", "topic_or_content"]
-            )
-        ),
-        types.FunctionDeclaration(
-            name="point_on_screen",
-            description="Deploys Swan's independent cyber-hand cursor sliding down from the top notch/bezel to point at, tap, or highlight specific UI elements, buttons, errors, text, or coordinates on the user's screen. Retracts back into the top bezel after duration.",
-            parameters=types.Schema(
-                type="OBJECT",
-                properties={
-                    "description": types.Schema(
-                        type="STRING",
-                        description="Description of what to point to (e.g. 'the blue submit button', 'the compile error on line 42', 'top right corner')."
-                    ),
-                    "x": types.Schema(
-                        type="INTEGER",
-                        description="Optional exact screen X coordinate in pixels (0 is left)."
-                    ),
-                    "y": types.Schema(
-                        type="INTEGER",
-                        description="Optional exact screen Y coordinate in pixels (0 is top)."
-                    ),
-                    "action": types.Schema(
-                        type="STRING",
-                        description="Cursor gesture action: 'point', 'tap', or 'circle'. Defaults to 'point'."
-                    ),
-                    "duration": types.Schema(
-                        type="NUMBER",
-                        description="Duration in seconds to point on screen before retracting (default 3.8s)."
-                    )
-                },
-                required=["description"]
             )
         ),
         types.FunctionDeclaration(

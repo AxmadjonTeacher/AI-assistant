@@ -180,7 +180,12 @@ class ReflexEngine:
         if screenshot_decision:
             return screenshot_decision
 
-        # 8. Generative / Deep Brain Query ("explain...", "how do I...", "write code...", "tushuntir...")
+        # 8. Neural System 1 Decision Engine (Laya ~33ms, ModernBERT / mmBERT)
+        laya_decision = self._check_laya_decision(text)
+        if laya_decision:
+            return laya_decision
+
+        # 9. Deep AI Query Detection
         ask_ai_decision = self._check_ask_ai(text)
         if ask_ai_decision:
             return ask_ai_decision
@@ -511,6 +516,77 @@ class ReflexEngine:
                     display_label="O'ylanmoqda...",
                     matched_phrase="ask_ai"
                 )
+        return None
+
+    def _check_laya_decision(self, text: str) -> Optional[ReflexDecision]:
+        """Queries Laya non-autoregressive neural model (~33ms) for semantic intent classification."""
+        try:
+            from laya_engine import laya_engine
+            if not laya_engine.is_ready():
+                return None
+
+            decision = laya_engine.evaluate_speech_intent(text)
+            if not decision or not decision.is_confident_reflex:
+                return None
+
+            intent = decision.intent
+            target_app = decision.target_app
+
+            if intent == "stop_agent":
+                return ReflexDecision(
+                    choice="stop_agent",
+                    confidence=decision.intent_confidence,
+                    action_type="stop_agent",
+                    params={},
+                    is_reflex_action=True,
+                    display_label="Agent to'xtatilmoqda...",
+                    matched_phrase=f"laya:{intent}"
+                )
+            elif intent == "open_app" and target_app != "none":
+                canonical_app = APP_MAP.get(target_app.lower(), target_app.title())
+                return ReflexDecision(
+                    choice="open_app",
+                    confidence=decision.intent_confidence,
+                    action_type="open_app",
+                    params={"app_name": canonical_app},
+                    is_reflex_action=True,
+                    display_label=f"{canonical_app} ochilmoqda...",
+                    matched_phrase=f"laya:open:{canonical_app}"
+                )
+            elif intent == "close_app" and target_app != "none":
+                canonical_app = APP_MAP.get(target_app.lower(), target_app.title())
+                return ReflexDecision(
+                    choice="close_app",
+                    confidence=decision.intent_confidence,
+                    action_type="close_app",
+                    params={"app_name": canonical_app},
+                    is_reflex_action=True,
+                    display_label=f"{canonical_app} yopilmoqda...",
+                    matched_phrase=f"laya:close:{canonical_app}"
+                )
+            elif intent == "media_control":
+                return ReflexDecision(
+                    choice="media_control",
+                    confidence=decision.intent_confidence,
+                    action_type="system_control",
+                    params={"action": "playpause", "feature": "media"},
+                    is_reflex_action=True,
+                    display_label="Musiqa / media boshqarilmoqda...",
+                    matched_phrase=f"laya:{intent}"
+                )
+            elif intent == "system_toggle":
+                return ReflexDecision(
+                    choice="take_screenshot",
+                    confidence=decision.intent_confidence,
+                    action_type="take_screenshot",
+                    params={},
+                    is_reflex_action=True,
+                    display_label="Skrinshot olinmoqda...",
+                    matched_phrase=f"laya:{intent}"
+                )
+        except Exception as e:
+            print(f"[ReflexEngine] Laya evaluation error: {e}", flush=True)
+
         return None
 
 # Global Singleton Instance
