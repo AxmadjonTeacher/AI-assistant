@@ -57,11 +57,13 @@ class AgentTask:
     agent_type: str
     title: str
     prompt: str
-    status: str = "running" # "running", "completed", "failed"
+    status: str = "running" # "running", "completed", "failed", "cancelled"
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     result_message: Optional[str] = None
     error: Optional[str] = None
+    is_cancelled: bool = False
+    cancellation_event: threading.Event = field(default_factory=threading.Event)
 
 def resolve_image_file(query: Optional[str] = None, prompt_hint: str = "") -> Optional[str]:
     """Intelligently resolves an image file path from a query or scans the prompt.
@@ -187,6 +189,49 @@ class AgentManager:
         else:
             display_title = recent_title or (completed[-1].title if completed else "Tasks completed")
             _update_hud_completed("Agent finished ✅", display_title[:28], auto_hide_seconds=4.0)
+
+    def cancel_all_agents(self) -> Dict[str, Any]:
+        """Terminates all currently running background agents immediately."""
+        with self._lock:
+            running = [t for t in self.tasks.values() if t.status == "running"]
+            for task in running:
+                task.is_cancelled = True
+                task.status = "cancelled"
+                task.finished_at = time.time()
+                task.result_message = "Foydalanuvchi buyrug'i bilan to'xtatildi."
+                task.cancellation_event.set()
+
+        count = len(running)
+        print(f"🛑 [AgentManager] Cancelled {count} active agent task(s).", flush=True)
+        if count > 0:
+            _update_hud_completed("Agent to'xtatildi 🛑", f"{count} ta vazifa bekor qilindi", auto_hide_seconds=2.5)
+            return {"status": "success", "message": f"{count} ta faol fon agenti to'xtatildi va bekor qilindi, Janob."}
+        else:
+            _update_hud_completed("Agent yo'q", "Hozirda faol fon agenti mavjud emas", auto_hide_seconds=2.0)
+            return {"status": "success", "message": "Hozirda fonda ishlayotgan hech qanday agent yo'q, Janob."}
+
+    def cancel_active_agent(self, task_id: Optional[str] = None) -> Dict[str, Any]:
+        """Cancels a specific or the most recent running agent task."""
+        with self._lock:
+            target_task = None
+            if task_id and task_id in self.tasks:
+                target_task = self.tasks[task_id]
+            else:
+                running = [t for t in self.tasks.values() if t.status == "running"]
+                if running:
+                    target_task = running[-1]
+
+            if target_task and target_task.status == "running":
+                target_task.is_cancelled = True
+                target_task.status = "cancelled"
+                target_task.finished_at = time.time()
+                target_task.result_message = "To'xtatildi."
+                target_task.cancellation_event.set()
+                print(f"🛑 [AgentManager] Cancelled task: {target_task.task_id} ({target_task.title})", flush=True)
+                _update_hud_completed("To'xtatildi 🛑", target_task.title[:24], auto_hide_seconds=2.5)
+                return {"status": "success", "message": f"'{target_task.title}' agenti to'xtatildi, Janob."}
+
+        return {"status": "success", "message": "To'xtatish uchun faol agent topilmadi."}
 
     def launch_blender_scene(self, prompt: str, style: str = "cinematic", reference_image: Optional[str] = None) -> Dict[str, Any]:
         """Launches an autonomous 3D director agent to build a scene in Blender,
@@ -653,6 +698,8 @@ class AgentManager:
             return {}
 
     def _run_blender_worker(self, task: AgentTask, style: str, reference_image_path: Optional[str] = None):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"🎨 [Blender Agent] Processing 3D task: '{task.prompt}' (reference: {reference_image_path})", flush=True)
         try:
             from google import genai
@@ -867,10 +914,17 @@ class AgentManager:
                 response = self._generate_with_fallback(client, user_msg, cfg)
                 code = self._clean_code(response.text or "")
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                print(f"🛑 [Blender Agent] Task cancelled before execution.", flush=True)
+                return
+
             # Send code to Blender with self-healing retry (up to 2 repair attempts)
             current_code = code
             last_err = None
             for attempt in range(3):
+                if task.is_cancelled or task.cancellation_event.is_set():
+                    print(f"🛑 [Blender Agent] Task cancelled during execution retry.", flush=True)
+                    return
                 try:
                     exec_res = self._execute_in_blender(current_code)
                     print(f"🎨 [Blender Agent] Code executed successfully (attempt {attempt+1}): {exec_res}", flush=True)
@@ -900,6 +954,9 @@ class AgentManager:
             if last_err:
                 raise last_err
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             # Verification: Ensure objects were actually created or preserved
             verify_res = self._execute_in_blender("result = {'count': len(bpy.data.objects), 'names': [o.name for o in bpy.data.objects]}")
             obj_info = verify_res.get("result", {})
@@ -907,6 +964,9 @@ class AgentManager:
 
             if obj_count == 0:
                 raise RuntimeError("Blender execution finished, but 0 3D objects exist in the scene.")
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             # Bring Blender to focus
             try:
@@ -934,6 +994,8 @@ class AgentManager:
             self._play_chime()
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Blender Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -941,6 +1003,8 @@ class AgentManager:
             self._sync_hud(recent_title="Blender failed", is_completion=True)
 
     def _run_generic_worker(self, task: AgentTask, details: str):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"🤖 [Generic Agent] Starting task: '{task.title}'", flush=True)
         try:
             from google import genai
@@ -951,6 +1015,9 @@ class AgentManager:
             cfg = types.GenerateContentConfig(temperature=0.3)
             response = self._generate_with_fallback(client, prompt, cfg)
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             task.status = "completed"
             task.finished_at = time.time()
             task.result_message = response.text or "Task completed"
@@ -960,6 +1027,8 @@ class AgentManager:
             if response and response.text:
                 _show_report_in_window(title=task.title, content=response.text, source=f"{task.agent_type.capitalize()} Agent")
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Generic Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -967,6 +1036,8 @@ class AgentManager:
             self._sync_hud(recent_title="Agent failed", is_completion=True)
 
     def _run_image_worker(self, task: AgentTask, source_image_path: Optional[str], aspect_ratio: str, model_preference: Optional[str]):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"🎨 [Image Agent] Starting image task: '{task.title}' (aspect: {aspect_ratio})", flush=True)
         try:
             from datetime import datetime
@@ -1047,6 +1118,8 @@ class AgentManager:
                 )
 
                 for m in candidate_models:
+                    if task.is_cancelled or task.cancellation_event.is_set():
+                        return
                     try:
                         print(f"🎨 [Image Agent] Trying Google GenAI model: '{m}'...", flush=True)
                         resp = client.models.generate_content(model=m, contents=contents, config=gen_cfg)
@@ -1070,6 +1143,9 @@ class AgentManager:
                         continue
             except Exception as genai_err:
                 print(f"⚠️ [Image Agent] Google GenAI setup notice: {genai_err}", flush=True)
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             if not success or not os.path.exists(dest_path) or os.path.getsize(dest_path) < 1000:
                 print("🎨 [Image Agent] Utilizing robust high-resolution visual engine with watermark purge...", flush=True)
@@ -1104,6 +1180,9 @@ class AgentManager:
                     except Exception:
                         pass
 
+                if task.is_cancelled or task.cancellation_event.is_set():
+                    return
+
                 import random
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
@@ -1122,6 +1201,8 @@ class AgentManager:
                 ]
 
                 for u in urls_to_try:
+                    if task.is_cancelled or task.cancellation_event.is_set():
+                        return
                     try:
                         req_p = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
                         with urllib.request.urlopen(req_p, timeout=25, context=ctx) as resp:
@@ -1131,6 +1212,9 @@ class AgentManager:
                                 break
                     except Exception as net_err:
                         print(f"⚠️ [Image Agent] URL attempt failed ({u[:60]}...): {net_err}", flush=True)
+
+                if task.is_cancelled or task.cancellation_event.is_set():
+                    return
 
                 if len(raw_bytes) > 1000:
                     from PIL import Image
@@ -1144,6 +1228,9 @@ class AgentManager:
 
             if not os.path.exists(dest_path) or os.path.getsize(dest_path) < 1000:
                 raise RuntimeError("Failed to generate and save image file to Desktop.")
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             try:
                 subprocess.Popen(["open", dest_path])
@@ -1159,6 +1246,8 @@ class AgentManager:
             self._play_chime()
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Image Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -1166,6 +1255,8 @@ class AgentManager:
             self._sync_hud(recent_title="Image failed", is_completion=True)
 
     def _run_transcribe_worker(self, task: AgentTask, file_path: Optional[str], query: Optional[str]):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"🎙️ [Transcribe Agent] Starting audio transcription for '{file_path or query}'", flush=True)
         _update_hud_working("Transcribing Audio 🎙️", "Locating audio file...")
         try:
@@ -1214,6 +1305,9 @@ class AgentManager:
             if not resolved_path or not os.path.isfile(resolved_path):
                 raise RuntimeError("Could not find any audio file to transcribe in ~/Downloads, ~/Desktop, ~/Documents, or ~/Music.")
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             audio_name = os.path.basename(resolved_path)
             print(f"🎙️ [Transcribe Agent] Found audio file: {resolved_path}", flush=True)
             _update_hud_working("Transcribing Audio 🎙️", f"Analyzing {audio_name[:25]}...")
@@ -1256,6 +1350,9 @@ class AgentManager:
             if not transcript:
                 raise RuntimeError("Transcription result was empty.")
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             base_root = os.path.splitext(audio_name)[0]
             out_file = os.path.join(desktop_dir, f"{base_root}_transcript.md")
             with open(out_file, "w", encoding="utf-8") as out_f:
@@ -1264,6 +1361,9 @@ class AgentManager:
                 out_f.write("---\n\n")
                 out_f.write(transcript)
                 out_f.write("\n")
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             try:
                 subprocess.Popen(["open", out_file])
@@ -1278,6 +1378,8 @@ class AgentManager:
             _show_report_in_window(title=f"Audio Transcription: {base_root}", content=transcript, source="Audio Transcriber")
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Transcribe Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -1285,6 +1387,8 @@ class AgentManager:
             self._sync_hud(recent_title="Transcription failed", is_completion=True)
 
     def _run_youtube_worker(self, task: AgentTask, query_or_url: str, focus: str):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"▶️ [YouTube Agent] Searching & summarizing: '{query_or_url}' (focus: {focus})", flush=True)
         _update_hud_working("YouTube Agent ▶️", "Locating video & captions...")
         try:
@@ -1316,6 +1420,9 @@ class AgentManager:
                 description = entry.get("description") or ""
                 auto_caps = entry.get("automatic_captions") or {}
                 subs = entry.get("subtitles") or {}
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             print(f"▶️ [YouTube Agent] Video identified: '{video_title}' ({video_url})", flush=True)
             _update_hud_working("YouTube Agent ▶️", f"Extracting {video_title[:25]}...")
@@ -1361,6 +1468,9 @@ class AgentManager:
             if not captions_text:
                 captions_text = f"Video Description:\n{description[:4000]}"
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             _update_hud_working("YouTube Agent ▶️", "Generating Executive Summary...")
             from google import genai
             from google.genai import types
@@ -1390,6 +1500,9 @@ class AgentManager:
             )
             summary_content = res.text.strip() if res and res.text else "Failed to generate summary."
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             safe_title = "".join(c for c in video_title if c.isalnum() or c in (" ", "_", "-")).strip()[:40]
             desktop_dir = os.path.expanduser("~/Desktop")
             out_file = os.path.join(desktop_dir, f"{safe_title}_Summary.md")
@@ -1401,6 +1514,9 @@ class AgentManager:
                 sf.write("---\n\n")
                 sf.write(summary_content)
                 sf.write("\n")
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             try:
                 subprocess.Popen(["open", out_file])
@@ -1415,6 +1531,8 @@ class AgentManager:
             _show_report_in_window(title=f"YouTube: {video_title}", content=summary_content, source="YouTube Intelligence")
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [YouTube Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -1422,6 +1540,8 @@ class AgentManager:
             self._sync_hud(recent_title="YouTube summary failed", is_completion=True)
 
     def _run_research_worker(self, task: AgentTask, query: str, focus: str = ""):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"🌐 [Research Agent] Deep research starting: '{query}' (focus: {focus})", flush=True)
         _update_hud_working("Researching Web 🌐", f"Gathering info on {query[:22]}...")
         try:
@@ -1451,6 +1571,9 @@ class AgentManager:
             )
             report_content = res.text.strip() if res and res.text else "Failed to gather research findings."
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             safe_title = "".join(c for c in query if c.isalnum() or c in (" ", "_", "-")).strip()[:40]
             if not safe_title:
                 safe_title = f"Research_{int(time.time())}"
@@ -1463,6 +1586,9 @@ class AgentManager:
                 rf.write("---\n\n")
                 rf.write(report_content)
                 rf.write("\n")
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             try:
                 subprocess.Popen(["open", out_file])
@@ -1479,6 +1605,8 @@ class AgentManager:
             _show_report_in_window(title=query, content=report_content, source="Research Agent")
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Research Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -1486,6 +1614,8 @@ class AgentManager:
             self._sync_hud(recent_title="Research failed", is_completion=True)
 
     def _run_document_worker(self, task: AgentTask, title: str, content: str, format: str = "docx", file_name: str = ""):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         fmt = format.lower().strip()
         if fmt not in ("docx", "pdf", "markdown", "md", "txt"):
             fmt = "docx"
@@ -1520,6 +1650,9 @@ class AgentManager:
                         content = res.text.strip()
                 except Exception:
                     pass
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             if fmt == "docx":
                 out_path = os.path.join(desktop_dir, f"{safe_name}.docx")
@@ -1639,6 +1772,9 @@ class AgentManager:
                     mf.write(content)
                     mf.write("\n")
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             try:
                 subprocess.Popen(["open", out_path])
             except Exception:
@@ -1651,6 +1787,8 @@ class AgentManager:
             self._play_chime()
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Document Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()
@@ -1658,6 +1796,8 @@ class AgentManager:
             self._sync_hud(recent_title="Document creation failed", is_completion=True)
 
     def _run_presentation_worker(self, task: AgentTask, title: str, topic_or_content: str, slide_count: int = 5):
+        if task.is_cancelled or task.cancellation_event.is_set():
+            return
         print(f"📊 [Presentation Agent] Generating {slide_count} slides: '{title}'", flush=True)
         _update_hud_working("Presentation Agent 📊", f"Designing {title[:22]}...")
         try:
@@ -1685,6 +1825,9 @@ class AgentManager:
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
                 models=("gemini-flash-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest", "gemini-2.5-flash")
             )
+
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
 
             slides_data = json.loads(res.text) if res and res.text else []
             if not isinstance(slides_data, list) or not slides_data:
@@ -1774,6 +1917,9 @@ class AgentManager:
 
             prs.save(pptx_path)
 
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
+
             # 2. Companion HTML slides
             html_path = os.path.join(desktop_dir, f"{safe_name}_slides.html")
             html_slides = []
@@ -1827,6 +1973,8 @@ class AgentManager:
             self._play_chime()
 
         except Exception as e:
+            if task.is_cancelled or task.cancellation_event.is_set():
+                return
             print(f"❌ [Presentation Agent Error]: {e}", flush=True)
             task.status = "failed"
             task.finished_at = time.time()

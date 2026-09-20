@@ -114,8 +114,8 @@ def main():
 
     pl["CFBundleDisplayName"] = APP_NAME
     pl["CFBundleIdentifier"] = BUNDLE_ID
-    pl["CFBundleShortVersionString"] = "1.4.0"
-    pl["CFBundleVersion"] = "1.4.0"
+    pl["CFBundleShortVersionString"] = "1.4.1"
+    pl["CFBundleVersion"] = "1.4.1"
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."

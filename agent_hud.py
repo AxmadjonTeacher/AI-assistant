@@ -24,11 +24,23 @@ class AgentHUDNavDelegate(NSObject):
         if self is None:
             return None
         self.on_loaded = None
+        self.on_stop = None
         return self
 
     def webView_didFinishNavigation_(self, webview, navigation):
         if hasattr(self, "on_loaded") and self.on_loaded:
             self.on_loaded()
+
+    def webView_decidePolicyForNavigationAction_decisionHandler_(self, webview, action, handler):
+        url = action.request().URL().absoluteString()
+        if url.startswith("swan://"):
+            command = url[7:]
+            if command == "stopAgent":
+                if hasattr(self, "on_stop") and self.on_stop:
+                    self.on_stop()
+            handler(0)  # WKNavigationActionPolicyCancel
+            return
+        handler(1)  # WKNavigationActionPolicyAllow
 
 class AgentHUDWindow:
     """Floating top-right corner status indicator for active background agents."""
@@ -49,6 +61,14 @@ class AgentHUDWindow:
         self._pending_evals = []
 
         self._init_window()
+
+    def _on_stop_clicked(self):
+        print("🛑 [AgentHUDWindow] User clicked manual Stop button on Agent HUD pill.", flush=True)
+        try:
+            from agent_manager import get_agent_manager
+            get_agent_manager().cancel_all_agents()
+        except Exception as e:
+            print(f"⚠️ [AgentHUDWindow] Error stopping agents: {e}", flush=True)
 
     def _update_frame_for_current_screen(self):
         mouse_loc = NSEvent.mouseLocation()
@@ -81,7 +101,7 @@ class AgentHUDWindow:
         self.panel.setOpaque_(False)
         self.panel.setBackgroundColor_(NSColor.clearColor())
         self.panel.setHasShadow_(False)
-        self.panel.setIgnoresMouseEvents_(True) # Non-blocking click-through
+        self.panel.setIgnoresMouseEvents_(True) # Default ignored until shown
         self.panel.setAcceptsMouseMovedEvents_(False)
         self.panel.setHidesOnDeactivate_(False)
 
@@ -101,6 +121,7 @@ class AgentHUDWindow:
 
         self.nav_delegate = AgentHUDNavDelegate.alloc().init()
         self.nav_delegate.on_loaded = self._on_page_loaded
+        self.nav_delegate.on_stop = self._on_stop_clicked
         self.webview.setNavigationDelegate_(self.nav_delegate)
 
         resolved_path = self.template_path
@@ -144,6 +165,7 @@ class AgentHUDWindow:
 
         self._update_frame_for_current_screen()
         self.panel.setFrame_display_(self._on_screen_frame, True)
+        self.panel.setIgnoresMouseEvents_(False)
 
         js = f"showWorking({json.dumps(title)}, {json.dumps(subtitle)});"
         self._eval_js(js)
@@ -157,6 +179,7 @@ class AgentHUDWindow:
         AppHelper.callAfter(self._main_show_completed, title, subtitle, auto_hide_seconds)
 
     def _main_show_completed(self, title: str, subtitle: str, auto_hide_seconds: float):
+        self.panel.setIgnoresMouseEvents_(False)
         js = f"showCompleted({json.dumps(title)}, {json.dumps(subtitle)});"
         self._eval_js(js)
 
@@ -177,6 +200,7 @@ class AgentHUDWindow:
             if self._hide_timer:
                 self._hide_timer.cancel()
                 self._hide_timer = None
+        self.panel.setIgnoresMouseEvents_(True)
         self._eval_js("hide();")
         def _order_out():
             time.sleep(0.35)

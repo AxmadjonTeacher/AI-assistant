@@ -2440,8 +2440,21 @@ def show_report_window(title: str, content: str, source: str = "Swan Intelligenc
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+def stop_agent(agent_type: str = "") -> dict:
+    """Stops, halts, or cancels running background AI agents (Blender 3D director, image creator, audio transcriber, YouTube summarizer, web research, documents, slides)."""
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.cancel_all_agents()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # Dispatch table
 TOOL_HANDLERS = {
+    "stop_agent": stop_agent,
+    "cancel_agent": stop_agent,
+    "halt_agent": stop_agent,
+    "kill_agent": stop_agent,
+    "abort_agent": stop_agent,
     "point_on_screen": point_on_screen,
     "point_at": point_on_screen,
     "pointer": point_on_screen,
@@ -3375,6 +3388,19 @@ def get_jarvis_tools() -> list[types.Tool]:
                     "task_id": types.Schema(
                         type="STRING",
                         description="Optional task ID to check specific agent status."
+                    )
+                }
+            )
+        ),
+        types.FunctionDeclaration(
+            name="stop_agent",
+            description="Stops, halts, or cancels currently running background AI agents (Blender 3D director, image creator, audio transcriber, YouTube summarizer, web research, documents, slides). Use immediately when the user asks to stop, cancel, or abort an agent.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "agent_type": types.Schema(
+                        type="STRING",
+                        description="Optional type of agent to stop, or empty to cancel all active agents."
                     )
                 }
             )

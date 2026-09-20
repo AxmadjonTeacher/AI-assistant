@@ -145,6 +145,11 @@ class ReflexEngine:
         if dismiss_decision:
             return dismiss_decision
 
+        # 1b. Stop Background Agent ("stop agent", "cancel agent", "agentni to'xtat", "to'xtat agentni")
+        stop_agent_decision = self._check_stop_agent(text)
+        if stop_agent_decision:
+            return stop_agent_decision
+
         # 2. Open Application ("open terminal and...", "terminalni och")
         open_decision = self._check_open_app(text, words)
         if open_decision:
@@ -218,6 +223,26 @@ class ReflexEngine:
                 )
         return None
 
+    def _check_stop_agent(self, text: str) -> Optional[ReflexDecision]:
+        stop_patterns = [
+            r"\b(stop agent|cancel agent|halt agent|abort agent|kill agent|stop background agent|stop task|stop the agent)\b",
+            r"\b(agentni to'xtat|agentni to'xtating|agentni bekor qil|agentni to'xtatgin|agentni o'chir|fon agentini to'xtat|to'xtat agentni|bekor qil agentni)\b",
+            r"\b(agent to'xtasin|vazifani to'xtat|ishni to'xtat|agentni toxtat|agentni to'xtatib tur)\b"
+        ]
+        for pat in stop_patterns:
+            m = re.search(pat, text)
+            if m:
+                return ReflexDecision(
+                    choice="stop_agent",
+                    confidence=0.98,
+                    action_type="stop_agent",
+                    params={},
+                    is_reflex_action=True,
+                    display_label="Agent to'xtatilmoqda...",
+                    matched_phrase=m.group(0)
+                )
+        return None
+
     def _check_open_app(self, text: str, words: List[str]) -> Optional[ReflexDecision]:
         # English patterns: "open [app]", "launch [app]", "start [app]", "switch to [app]"
         open_verbs = ["open", "launch", "start", "run", "switch to"]
@@ -250,14 +275,14 @@ class ReflexEngine:
 
         # Uzbek patterns: "[app]ni och", "[app] ilovasini och", "[app] och", "[app]ga o't"
         uz_patterns = [
-            r"([a-zA-Z0-9]+)(?:ni|ning|ga)?\s+(?:ilovasini\s+)?(och|ishga tushir|boshla|o't)\b",
-            r"(och|ishga tushir)\s+([a-zA-Z0-9]+)"
+            r"([a-zA-Z0-9]+)(?:ni|ning|ga)?\s+(?:ilovasini\s+)?(och|ochgin|oching|ochib ber|ishga tushir|ishga tushirgin|boshla|o't)\b",
+            r"(och|ochgin|oching|ochib ber|ishga tushir)\s+([a-zA-Z0-9]+)"
         ]
         for pat in uz_patterns:
             m = re.search(pat, text)
             if m:
                 groups = m.groups()
-                cand = groups[0] if groups[1] in ["och", "ishga tushir", "boshla", "o't"] else groups[1]
+                cand = groups[0] if groups[1] in ["och", "ochgin", "oching", "ochib ber", "ishga tushir", "ishga tushirgin", "boshla", "o't"] else groups[1]
                 cand = cand.lower().strip()
                 # Remove suffixes like "ni", "ga"
                 for sfx in ["ni", "ning", "ga", "da"]:
@@ -306,7 +331,7 @@ class ReflexEngine:
 
         # Uzbek: "[app]ni yop"
         uz_patterns = [
-            r"([a-zA-Z0-9]+)(?:ni)?\s+(yop|o'chir|chiq)\b"
+            r"([a-zA-Z0-9]+)(?:ni)?\s+(yop|yopgin|yoping|yopib ber|o'chir|o'chirgin|chiq|to'xtat)\b"
         ]
         for pat in uz_patterns:
             m = re.search(pat, text)
@@ -508,5 +533,7 @@ def execute_reflex_action_sync(decision: ReflexDecision) -> Dict[str, Any]:
         return tools.take_screenshot()
     elif action == "dismiss_assistant":
         return tools.dismiss_assistant()
+    elif action == "stop_agent":
+        return tools.stop_agent()
     else:
         return {"status": "error", "message": f"Unknown reflex action: {action}"}
