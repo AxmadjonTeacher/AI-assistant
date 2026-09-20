@@ -792,13 +792,22 @@ class SwanApp:
             if self.client:
                 asyncio.create_task(self.client.ensure_active_session())
 
-            # Ultra-fast immediate visual HUD & non-blocking chime (Zero latency stall)
+            # Spoken acknowledgment prompt matching selected language, voice and respectful setting
+            pcm_np, label = audio_prompts.get_random_prompt(
+                language=config.language,
+                voice_name=config.voice_name,
+                respectful=config.respectful_address
+            )
+            self._active_prompt_label = label
             self._active_action = ""
-            self._active_prompt_label = "Listening..."
-            self.audio_manager.play_chime()
-            self.state_machine.on_listening("Listening...")
-            self.hud.show(state="listening", status="LISTENING", subtitle="Listening...")
-            print(f"⚡ [Wake Detected] Instant listening triggered. Mid-speech reflex active.", flush=True)
+            print(f"🎙️ [Wake Word Detected] Acknowledging with: '{label}'", flush=True)
+
+            self.state_machine.on_wake(label)
+            self.hud.show(state="wake", status="SWAN", subtitle=label)
+
+            # Play voice acknowledgment non-blocking so mic recording starts immediately in parallel!
+            if pcm_np is not None:
+                self.audio_manager.play_prompt(pcm_np)
 
             # Multi-turn conversational loop (back-and-forth)
             conversation_active = True
@@ -996,11 +1005,11 @@ class SwanApp:
                 if speech_started:
                     speech_len = last_speech_time - speech_start_time
                     if speech_len < 1.0:
-                        effective_pause = 0.80 # Snappy for short commands ("Bluetooth-ni yoq")
-                    elif speech_len < 3.5:
-                        effective_pause = 0.75 # Snappy responsive trigger
+                        effective_pause = 0.40 # Ultra-snappy for short commands ("Notes", "Safari och", "Mute")
+                    elif speech_len < 2.5:
+                        effective_pause = 0.45 # Snappy responsive trigger
                     else:
-                        effective_pause = 0.85
+                        effective_pause = 0.60
                     if time.time() - last_speech_time > effective_pause:
                         if speech_len < 0.35:
                             # False start / breath / click / mic tap - reset and keep waiting for real speech
@@ -1215,9 +1224,10 @@ class SwanApp:
                     except Exception:
                         pass
                 elif self._active_action and not self._interrupted and not self._cancel_requested:
-                    # Native OS action was completed cleanly - keep completely silent (no spoken chatter)
-                    self._active_transcript = ""
-                    print(f"ℹ️ [Silent Action Completed] Action executed cleanly without voice response: {self._active_action}", flush=True)
+                    action_confirm = f"{self._active_action} bajarildi, Janob." if config.respectful_address else f"{self._active_action} bajarildi."
+                    self._active_transcript = action_confirm
+                    self._last_assistant_speech = action_confirm
+                    print(f"ℹ️ [Spoken Action Confirmation] {action_confirm}", flush=True)
             except asyncio.CancelledError:
                 print("🛑 [Turn Task] Gemini turn streaming aborted by user interruption.", flush=True)
                 if self._active_transcript:

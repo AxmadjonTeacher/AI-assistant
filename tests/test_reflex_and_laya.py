@@ -57,8 +57,8 @@ def test_laya_engine_standby_and_fallback():
     if d is not None:
         assert d.choice == "ask_ai"
 
-def test_ui_and_silent_action_rules():
-    """Verify that Dynamic Island horn corners are deleted and silent action instructions are active."""
+def test_ui_and_spoken_action_rules():
+    """Verify that Dynamic Island horn corners are deleted, spoken action instructions are active, and phonetic reflex matches."""
     with open("hud_template.html", "r") as f:
         hud_content = f.read()
     assert ".dynamic-island::before" not in hud_content, "Concave horn pseudo-element must be removed"
@@ -67,10 +67,16 @@ def test_ui_and_silent_action_rules():
     from config import AppConfig
     cfg = AppConfig()
     cmd_inst = cfg.get_system_instruction(active_mode="command")
-    assert "SILENT ACTION EXECUTION" in cmd_inst
+    assert "SPOKEN CONFIRMATION" in cmd_inst
     assert "Janob" in cmd_inst
     assert "John" in cmd_inst
 
     chat_inst = cfg.get_system_instruction(active_mode="chat")
-    assert "jim bajaring" in chat_inst
+    assert "ovozli jumla" in chat_inst
+
+    from reflex_engine import reflex_engine
+    assert reflex_engine.evaluate("safari are").params.get("app_name") == "Safari"
+    assert reflex_engine.evaluate("the notes").params.get("app_name") == "Notes"
+    assert reflex_engine.evaluate("telegram og").params.get("app_name") == "Telegram"
+    assert reflex_engine.evaluate("gently talks dirt").choice == "stop_agent"
 

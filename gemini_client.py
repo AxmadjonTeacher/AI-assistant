@@ -159,14 +159,17 @@ class GeminiLiveClient:
 
         send_time = time.time()
         first_audio_time = None
+        has_tool_call = False
+        turn_completed = False
 
         async def _receive_loop():
-            nonlocal first_audio_time
+            nonlocal first_audio_time, has_tool_call, turn_completed
             async for resp in self.session.receive():
                 self._last_activity_time = time.time()
 
                 # 1. Handle Tool Calls
                 if resp.tool_call and resp.tool_call.function_calls:
+                    has_tool_call = True
                     print(f"🔧 [Gemini Live] Received {len(resp.tool_call.function_calls)} tool call(s)", flush=True)
                     for fc in resp.tool_call.function_calls:
                         if on_tool_call:
@@ -189,6 +192,7 @@ class GeminiLiveClient:
                     is_dismissal = any(fc.name in ["dismiss_assistant", "dismiss", "hide_assistant", "disappear", "close_assistant"] for fc in resp.tool_call.function_calls)
                     if is_dismissal:
                         print("💨 [Gemini Client] Dismissal tool executed. Concluding turn immediately.", flush=True)
+                        turn_completed = True
                         break
 
                     # Send tool results back to Gemini Live
@@ -214,6 +218,7 @@ class GeminiLiveClient:
                                 on_audio_chunk(part.inline_data.data)
 
                     if sc.turn_complete:
+                        turn_completed = True
                         break
 
         try:
@@ -252,9 +257,9 @@ class GeminiLiveClient:
 
         latency = (first_audio_time - send_time) if first_audio_time else (time.time() - send_time)
 
-        # Automatic Recovery: If session returned empty response (0 audio chunks), retry once with clean session!
-        if first_audio_time is None and retry_count == 0:
-            print("⚠️ [Gemini Live] Session yielded 0 audio chunks. Auto-reconnecting and retrying turn...", flush=True)
+        # Automatic Recovery: If session returned empty response (0 audio chunks without tool or completion), retry once!
+        if first_audio_time is None and not has_tool_call and not turn_completed and retry_count == 0:
+            print("⚠️ [Gemini Live] Session yielded 0 audio chunks without completion. Auto-reconnecting and retrying turn...", flush=True)
             self._connected = False
             self._needs_reconnect = True
             await self._disconnect_unlocked()

@@ -67,6 +67,20 @@ INTERRUPTION_GRAMMAR_WORDS = [
     "my", "your", "our", "actually", "hey", "hi", "ok", "okay", "[unk]"
 ]
 
+COMMAND_GRAMMAR_WORDS = [
+    # Verbs
+    "open", "close", "launch", "quit", "start", "stop", "cancel", "mute",
+    "next", "previous", "switch", "turn", "up", "down",
+    # Applications
+    "safari", "notes", "telegram", "terminal", "chrome", "google", "code", "finder",
+    "spotify", "music", "calculator", "calendar", "settings", "blender", "preview", "mail",
+    # System concepts
+    "volume", "audio", "sound", "wifi", "bluetooth", "tab", "window", "desktop", "space", "agent",
+    # Common words and phonetic tokens from Vosk for Uzbek utterances
+    "the", "a", "an", "to", "in", "on", "and", "are", "og", "dirt", "talks", "peseta", "gotta", "gently",
+    "please", "swan", "sir", "janob", "app", "[unk]"
+]
+
 RMS_THRESHOLDS = {
     "low": 240.0,    # Strictly near-field direct user speech
     "medium": 120.0, # Balanced responsive default
@@ -106,6 +120,7 @@ class WakeWordDetector:
         self.model = None
         self.grammar = json.dumps(GRAMMAR_WORDS)
         self.interruption_grammar = json.dumps(INTERRUPTION_GRAMMAR_WORDS)
+        self.command_grammar = json.dumps(COMMAND_GRAMMAR_WORDS)
         self.recognizer = None
         self.interruption_recognizer = None
 
@@ -129,12 +144,15 @@ class WakeWordDetector:
             print(f"[ERROR] Failed to initialize Vosk model: {e}", flush=True)
 
     def create_command_recognizer(self) -> Optional[vosk.KaldiRecognizer]:
-        """Creates an open-vocabulary recognizer for streaming speech analysis."""
+        """Creates an ultra-fast streaming command recognizer with focused grammar."""
         if self.model:
             try:
-                return vosk.KaldiRecognizer(self.model, self.sample_rate)
-            except Exception as e:
-                print(f"⚠️ [WakeWordDetector] Failed to create command recognizer: {e}", flush=True)
+                return vosk.KaldiRecognizer(self.model, self.sample_rate, self.command_grammar)
+            except Exception:
+                try:
+                    return vosk.KaldiRecognizer(self.model, self.sample_rate)
+                except Exception as e:
+                    print(f"⚠️ [WakeWordDetector] Failed to create command recognizer: {e}", flush=True)
         return None
 
     def reset(self):

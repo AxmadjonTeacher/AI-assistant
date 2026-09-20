@@ -230,7 +230,7 @@ class ReflexEngine:
 
     def _check_stop_agent(self, text: str) -> Optional[ReflexDecision]:
         stop_patterns = [
-            r"\b(stop agent|cancel agent|halt agent|abort agent|kill agent|stop background agent|stop task|stop the agent)\b",
+            r"\b(stop agent|cancel agent|halt agent|abort agent|kill agent|stop background agent|stop task|stop the agent|gently talks dirt|talks dirt)\b",
             r"\b(agentni to'xtat|agentni to'xtating|agentni bekor qil|agentni to'xtatgin|agentni o'chir|fon agentini to'xtat|to'xtat agentni|bekor qil agentni)\b",
             r"\b(agent to'xtasin|vazifani to'xtat|ishni to'xtat|agentni toxtat|agentni to'xtatib tur)\b"
         ]
@@ -249,6 +249,31 @@ class ReflexEngine:
         return None
 
     def _check_open_app(self, text: str, words: List[str]) -> Optional[ReflexDecision]:
+        # Fast streaming phonetic matches from Vosk:
+        # Handles "safari are", "telegram og", "the notes", "no zog", "open safari", "notes", etc.
+        for alias, app_name in APP_MAP.items():
+            if alias in ["the", "a", "an", "is", "in", "to", "and"]:
+                continue
+            pat = rf"\b(?:open|launch|start|the)?\s*{re.escape(alias)}(?:\s+(?:are|og|hot|out|och|ochgin))?\b"
+            m = re.search(pat, text)
+            if m:
+                # Guard against general knowledge questions like "what is safari" or "explain chrome"
+                ai_starters = ("what", "how", "why", "who", "when", "where", "tell", "explain", "nima", "qanday", "nega", "kim", "qachon")
+                if any(text.startswith(q) for q in ai_starters):
+                    continue
+                has_follow, residual = self._extract_followup(text, m.end())
+                return ReflexDecision(
+                    choice="open_app",
+                    confidence=0.96,
+                    action_type="open_app",
+                    params={"app_name": app_name},
+                    is_reflex_action=True,
+                    display_label=f"{app_name} ochilmoqda...",
+                    has_followup=has_follow,
+                    residual_text=residual,
+                    matched_phrase=m.group(0)
+                )
+
         # English patterns: "open [app]", "launch [app]", "start [app]", "switch to [app]"
         open_verbs = ["open", "launch", "start", "run", "switch to"]
         for verb in open_verbs:
@@ -357,7 +382,7 @@ class ReflexEngine:
 
     def _check_volume(self, text: str) -> Optional[ReflexDecision]:
         # Mute
-        if re.search(r"\b(mute|mute volume|mute sound|ovozni o'chir|tovushni o'chir|ovozsiz qil)\b", text):
+        if re.search(r"\b(mute|mute volume|mute sound|mute audio|ovozni o'chir|tovushni o'chir|ovozsiz qil)\b", text):
             return ReflexDecision(
                 choice="system_control",
                 confidence=0.97,
@@ -379,7 +404,7 @@ class ReflexEngine:
                 matched_phrase="unmute"
             )
         # Volume Up
-        if re.search(r"\b(volume up|increase volume|louder|ovozni balandlat|ovozni oshir|tovushni balandlat)\b", text):
+        if re.search(r"\b(volume up|increase volume|louder|those need gotta|ovozni balandlat|ovozni oshir|tovushni balandlat)\b", text):
             return ReflexDecision(
                 choice="system_control",
                 confidence=0.96,
@@ -390,7 +415,7 @@ class ReflexEngine:
                 matched_phrase="volume up"
             )
         # Volume Down
-        if re.search(r"\b(volume down|decrease volume|quieter|ovozni pasaytir|ovozni kamaytir|tovushni pasaytir)\b", text):
+        if re.search(r"\b(volume down|decrease volume|quieter|those me peseta|ovozni pasaytir|ovozni kamaytir|tovushni pasaytir)\b", text):
             return ReflexDecision(
                 choice="system_control",
                 confidence=0.96,
