@@ -42,6 +42,15 @@ def _update_hud_hide():
     except Exception:
         pass
 
+def _show_report_in_window(title: str, content: str, source: str = "Swan Agent"):
+    try:
+        from report_window import get_report_window
+        win = get_report_window()
+        if win:
+            win.show_report(title, content, source)
+    except Exception as e:
+        print(f"⚠️ [AgentManager] Notice: report window display: {e}", flush=True)
+
 @dataclass
 class AgentTask:
     task_id: str
@@ -333,6 +342,30 @@ class AgentManager:
             "message": f"YouTube video summarization started for '{short_title}'. Structured executive summary will be saved to Desktop and opened."
         }
 
+    def launch_research_agent(self, query: str, focus: str = "") -> Dict[str, Any]:
+        """Launches an autonomous deep research & internet information gathering background agent."""
+        task_id = f"res-{uuid.uuid4().hex[:6]}"
+        short_title = query[:28] + ("..." if len(query) > 28 else "")
+        task = AgentTask(
+            task_id=task_id,
+            agent_type="research",
+            title=f"Research: {short_title}",
+            prompt=query
+        )
+        with self._lock:
+            self.tasks[task_id] = task
+
+        self._sync_hud()
+        thread = threading.Thread(target=self._run_research_worker, args=(task, query, focus), daemon=True)
+        thread.start()
+
+        return {
+            "status": "launched",
+            "task_id": task_id,
+            "agent": "Swan Intelligence Researcher",
+            "message": f"Deep research agent launched for '{query}'. When finished, a floating transparent report window will appear on the left side of your screen with structured findings and one-click copy."
+        }
+
     def launch_document_agent(self, title: str, content: str, format: str = "docx", file_name: str = "") -> Dict[str, Any]:
         """Launches an autonomous document creation background agent (.docx, .pdf, .md)."""
         task_id = f"doc-{uuid.uuid4().hex[:6]}"
@@ -600,7 +633,9 @@ class AgentManager:
                 "import bpy\n"
                 "objs = []\n"
                 "for o in bpy.data.objects:\n"
-                "    objs.append({'name': o.name, 'type': o.type, 'loc': [round(v, 2) for v in o.location]})\n"
+                "    dim = [round(v, 2) for v in o.dimensions] if hasattr(o, 'dimensions') else []\n"
+                "    mats = [m.name for m in o.data.materials if m] if hasattr(o, 'data') and hasattr(o.data, 'materials') else []\n"
+                "    objs.append({'name': o.name, 'type': o.type, 'loc': [round(v, 2) for v in o.location], 'dim': dim, 'mats': mats})\n"
                 "active_cam = bpy.context.scene.camera.name if bpy.context.scene.camera else None\n"
                 "result = {\n"
                 "    'count': len(objs),\n"
@@ -742,55 +777,56 @@ class AgentManager:
                 is_modification = (existing_count > 0) and not is_clean_slate_requested
 
                 if is_modification:
-                    obj_summary = ", ".join([f"{o['name']} ({o['type']})" for o in existing_objs[:15]])
-                    if len(existing_objs) > 15:
-                        obj_summary += f"... (+{len(existing_objs)-15} more)"
+                    inventory_lines = []
+                    for idx, o in enumerate(existing_objs):
+                        dim_str = f", dimensions: {o.get('dim')}" if o.get('dim') else ""
+                        mat_str = f", materials: {o.get('mats')}" if o.get('mats') else ""
+                        inventory_lines.append(f"  {idx+1}. Object '{o['name']}' [{o['type']}] at location {o.get('loc')}{dim_str}{mat_str}")
+                    inventory_text = "\n".join(inventory_lines)
 
-                    print(f"🎬 [Blender Agent] Mode: SCENE PRESERVATION ({existing_count} existing objects). Updating camera/scene without deleting meshes.", flush=True)
+                    print(f"🎬 [Blender Agent] Mode: SURGICAL SCENE MODIFICATION ({existing_count} objects in scene).", flush=True)
 
                     system_instruction = (
-                        "You are an elite Hollywood 3D Director and master Blender Python developer for Blender 5.2.\n"
-                        "You are working on an EXISTING Blender 3D scene with existing objects the user loves.\n\n"
-                        "CRITICAL SCENE PRESERVATION (ABSOLUTE NON-NEGOTIABLE RULE):\n"
-                        "- NEVER delete, remove, unlink, or modify existing meshes, curves, or materials! DO NOT run bpy.data.objects.remove().\n"
-                        "- Retain ALL existing objects and scene geometry in place.\n"
-                        "- The user wants camera choreography, camera movement, or scene animation.\n\n"
-                        "HOLLYWOOD CINEMATOGRAPHY ENGINE & 4 ARCHETYPES:\n"
-                        "Map the user's request to the appropriate cinematography archetype:\n"
-                        "1. ARCHETYPE 1: CONTINUOUS ONE-SHOT PREVIZ & LIVING LENS (for general flow, orbits, tracking):\n"
-                        "   - Single continuous camera move along a smooth organic spline.\n"
-                        "   - Living Lens: Animate focal length (cam.data.keyframe_insert(data_path='lens', frame=f)). Widen to 22-24mm during fast movement, tighten to 35-50mm on pauses/accents.\n"
-                        "   - Smooth trigonometric orbital path: cx = hero_x + cos(angle)*radius, cy = hero_y + sin(angle)*radius, cz = hero_z + height + sin(t*pi)*tilt.\n"
-                        "2. ARCHETYPE 2: DIALOGUE RAILS & OTS COVERAGE (for conversations, multi-character):\n"
-                        "   - 21:9 cinematic framing (resolution_x=1920, resolution_y=804).\n"
-                        "   - Over-the-shoulder (OTS) shots crawling at shoulder height.\n"
-                        "   - Instant cut discipline: camera location and target jump instantly on cut frames with zero transition drift.\n"
-                        "3. ARCHETYPE 3: HIGH-CONCEPT ACTION, SURFACE DIVES & ROBO-ARM:\n"
-                        "   - Vertical elevator / floor dive: PURE Z-axis movement ONLY, zero rotation (lock X and Y coordinates), smooth ease-in, slowdown in middle with hero dead center.\n"
-                        "   - Robo-Arm snaps: Camera whip-arcs to distinct angle, followed by a DEAD STOP with ZERO drift (keyframe identical coordinates at hold start and hold end).\n"
-                        "4. ARCHETYPE 4: HYPERMOTION COMMERCIAL:\n"
-                        "   - Speed ramping: every shot snaps in hard, sags in the middle, and accelerates into the cut.\n"
-                        "   - Packshot composition: hero subject framed on the left third, breathing room on the right.\n\n"
-                        "CAMERA RIGGING ARCHITECTURE (BLENDER 5.2 EXACT SYNTAX):\n"
-                        "- Identify hero object/center of interest from existing objects.\n"
-                        "- Clean old animation on camera: if cam.animation_data: cam.animation_data_clear(). If cam.data.animation_data: cam.data.animation_data_clear().\n"
-                        "- Create or locate Empty object named `Camera_LookTarget` placed at subject center: (scene.collection.objects.link(look_target)).\n"
-                        "- Ensure TRACK_TO constraint on camera: track_axis='TRACK_NEGATIVE_Z', up_axis='UP_Y', target=look_target.\n"
-                        "- Blender 5.2 DOF: cam.data.dof.use_dof = True; cam.data.dof.focus_object = look_target; cam.data.dof.aperture_fstop = 2.8 (NEVER use focus_target).\n"
-                        "- Anti-Gimbal Singularity: When passing overhead, maintain minimum horizontal offset (abs(x) >= 0.04 or abs(y) >= 0.04) to prevent 180-degree flip.\n"
-                        "- Standardize timeline: scene.render.fps = 24; scene.frame_start = 1; scene.frame_end = 120 (or matched duration); scene.frame_set(1).\n"
-                        "- Render engine: Leave existing engine intact.\n"
-                        "- NEVER use bpy.ops.wm.read_factory_settings, bpy.ops.wm.read_homefile, or sys.exit.\n"
-                        "- Output ONLY executable Python code inside a ```python ``` markdown codeblock without explanations."
+                        "You are an elite Blender 5.2 Python (bpy) Automation Specialist and Hollywood 3D Technical Director.\n"
+                        "You are performing SURGICAL INCREMENTAL MODIFICATIONS to an active Blender 3D scene.\n\n"
+                        "CURRENT LIVE BLENDER SCENE INVENTORY:\n"
+                        f"{inventory_text}\n"
+                        f"Active Camera: {active_cam or 'None'}\n\n"
+                        "CRITICAL SURGICAL MODIFICATION RULES (ABSOLUTE DISCIPLINE):\n"
+                        "1. OBJECT PRESERVATION & ZERO UNREQUESTED OBJECTS:\n"
+                        "   - NEVER create new meshes, cubes, planes, spheres, or shapes UNLESS the user explicitly asked to add a new object!\n"
+                        "   - If the user did NOT ask to add objects, DO NOT CALL any bpy.ops.mesh.primitive_*_add operators!\n"
+                        "   - Retain all existing objects in place unless explicitly commanded to modify or delete them.\n\n"
+                        "2. OBJECT DELETION / REMOVAL:\n"
+                        "   - If the user asks to remove/delete objects (e.g. 'remove the floor', 'delete the 3 cubes', 'remove Plane', 'leave only the 2 cubes'):\n"
+                        "     Identify the target object(s) in the inventory above by name, type, or position.\n"
+                        "     Remove them cleanly:\n"
+                        "     ```python\n"
+                        "     for target_name in ['Floor', 'Plane', ...]:\n"
+                        "         obj = bpy.data.objects.get(target_name)\n"
+                        "         if obj:\n"
+                        "             bpy.data.objects.remove(obj, do_unlink=True)\n"
+                        "     ```\n"
+                        "     STRICT RULE: DO NOT spawn replacement objects or other meshes when deleting!\n\n"
+                        "3. CAMERA MOVEMENT & CINEMATOGRAPHY ONLY:\n"
+                        "   - If the user asks to animate, move, or orbit the camera (e.g. 'move the camera around the 2 cubes', 'orbit', 'camera flyby'):\n"
+                        "     - STRICT: ONLY animate the Camera (and Camera_LookTarget Empty). DO NOT create or modify ANY mesh objects!\n"
+                        "     - Center the Camera_LookTarget Empty on the remaining subjects of interest.\n"
+                        "     - Animate camera location keyframes: cam.keyframe_insert(data_path='location', frame=f).\n"
+                        "     - Use TRACK_TO constraint pointing at Camera_LookTarget (track_axis='TRACK_NEGATIVE_Z', up_axis='UP_Y').\n"
+                        "     - Blender 5.2 DOF: cam.data.dof.focus_object = look_target (NOT focus_target).\n\n"
+                        "4. OBJECT MODIFICATION:\n"
+                        "   - If the user asks to scale, reposition, or change materials of existing objects: modify them in-place using bpy.data.objects.get(name).\n\n"
+                        "5. 'DO NOT ADD OR CHANGE ANY OBJECTS' DIRECTIVE:\n"
+                        "   - If the user says 'do not add or change any objects' or similar, YOU MUST RESPECT THIS 100%. Only manipulate the camera/lighting as requested.\n\n"
+                        "6. OUTPUT FORMAT:\n"
+                        "   - Output ONLY clean, executable Python code inside a ```python ``` markdown block. No conversational text."
                     )
 
                     user_msg = (
-                        f"CURRENT LIVE BLENDER SCENE:\n"
-                        f"- Existing Objects ({existing_count}): {obj_summary}\n"
-                        f"- Active Camera: {active_cam or 'None'}\n\n"
-                        f"USER REQUEST: {task.prompt}\n"
-                        f"Cinematography Style: {style}\n"
-                        f"TASK: Update camera choreography and scene elements smoothly. DO NOT delete existing objects!"
+                        f"USER INSTRUCTION: {task.prompt}\n"
+                        f"Aesthetic/Cinematography Style: {style}\n"
+                        f"TASK: Execute the user instruction surgically on the existing scene. Follow all preservation, deletion, and camera rules strictly."
                     )
                 else:
                     print(f"🎬 [Blender Agent] Mode: CLEAN SLATE / NEW SCENE. Generating complete 3D scene.", flush=True)
@@ -921,6 +957,8 @@ class AgentManager:
 
             self._sync_hud(recent_title=task.title[:25], is_completion=True)
             self._play_chime()
+            if response and response.text:
+                _show_report_in_window(title=task.title, content=response.text, source=f"{task.agent_type.capitalize()} Agent")
         except Exception as e:
             print(f"❌ [Generic Agent Error]: {e}", flush=True)
             task.status = "failed"
@@ -1237,6 +1275,7 @@ class AgentManager:
             task.result_message = f"Audio transcribed successfully: {out_file}"
             self._sync_hud(recent_title=f"{base_root[:20]} transcribed", is_completion=True)
             self._play_chime()
+            _show_report_in_window(title=f"Audio Transcription: {base_root}", content=transcript, source="Audio Transcriber")
 
         except Exception as e:
             print(f"❌ [Transcribe Agent Error]: {e}", flush=True)
@@ -1373,6 +1412,7 @@ class AgentManager:
             task.result_message = f"YouTube video summarized: {out_file}"
             self._sync_hud(recent_title=f"{safe_title[:20]} summarized", is_completion=True)
             self._play_chime()
+            _show_report_in_window(title=f"YouTube: {video_title}", content=summary_content, source="YouTube Intelligence")
 
         except Exception as e:
             print(f"❌ [YouTube Agent Error]: {e}", flush=True)
@@ -1380,6 +1420,70 @@ class AgentManager:
             task.finished_at = time.time()
             task.error = str(e)
             self._sync_hud(recent_title="YouTube summary failed", is_completion=True)
+
+    def _run_research_worker(self, task: AgentTask, query: str, focus: str = ""):
+        print(f"🌐 [Research Agent] Deep research starting: '{query}' (focus: {focus})", flush=True)
+        _update_hud_working("Researching Web 🌐", f"Gathering info on {query[:22]}...")
+        try:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=config.api_key)
+
+            research_prompt = (
+                "You are a World-Class Intelligence Analyst and Technical Researcher.\n"
+                f"Topic / Query: {query}\n"
+                f"User Focus: {focus or 'Comprehensive, verified intelligence gathering'}\n\n"
+                "Please compile a definitive, deeply structured, and authoritative Executive Research Report in Markdown.\n"
+                "Structure your report cleanly with:\n"
+                "1. 🎯 Executive Overview & Core Findings (high-impact summary answering the prompt)\n"
+                "2. 💡 Key Takeaways & Facts (bulleted list with specifics)\n"
+                "3. 📊 Deep Analysis & Evidence (clear sections with ## headings)\n"
+                "4. 🔍 Comparison / Synthesis (if applicable, using markdown tables)\n"
+                "5. 🏁 Strategic Conclusion & Next Steps\n\n"
+                "Write in crisp, modern GitHub Markdown with bolding, code tags, and clear dividers."
+            )
+
+            res = self._generate_with_fallback(
+                client,
+                contents=research_prompt,
+                config=None,
+                models=("gemini-flash-latest", "gemini-3.1-flash-lite-preview", "gemini-flash-lite-latest", "gemini-2.5-flash")
+            )
+            report_content = res.text.strip() if res and res.text else "Failed to gather research findings."
+
+            safe_title = "".join(c for c in query if c.isalnum() or c in (" ", "_", "-")).strip()[:40]
+            if not safe_title:
+                safe_title = f"Research_{int(time.time())}"
+            desktop_dir = os.path.expanduser("~/Desktop")
+            out_file = os.path.join(desktop_dir, f"{safe_title}_Report.md")
+
+            with open(out_file, "w", encoding="utf-8") as rf:
+                rf.write(f"# Research Report: {query}\n\n")
+                rf.write(f"*Generated by Swan AI Intelligence on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+                rf.write("---\n\n")
+                rf.write(report_content)
+                rf.write("\n")
+
+            try:
+                subprocess.Popen(["open", out_file])
+            except Exception:
+                pass
+
+            task.status = "completed"
+            task.finished_at = time.time()
+            task.result_message = f"Research report created: {out_file}"
+            self._sync_hud(recent_title=f"{safe_title[:20]} report ready", is_completion=True)
+            self._play_chime()
+
+            # Display directly in transparent floating report window on the left of the screen!
+            _show_report_in_window(title=query, content=report_content, source="Research Agent")
+
+        except Exception as e:
+            print(f"❌ [Research Agent Error]: {e}", flush=True)
+            task.status = "failed"
+            task.finished_at = time.time()
+            task.error = str(e)
+            self._sync_hud(recent_title="Research failed", is_completion=True)
 
     def _run_document_worker(self, task: AgentTask, title: str, content: str, format: str = "docx", file_name: str = ""):
         fmt = format.lower().strip()

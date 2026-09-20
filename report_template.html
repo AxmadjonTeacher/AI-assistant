@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Swan Intelligence Report</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    color: #f1f5f9;
+  }
+
+  /* Main Glassmorphic Container */
+  .report-panel {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: rgba(15, 12, 26, 0.85);
+    backdrop-filter: blur(45px) saturate(190%);
+    -webkit-backdrop-filter: blur(45px) saturate(190%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 20px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    overflow: hidden;
+    animation: panelPopIn 0.38s cubic-bezier(0.16, 1.08, 0.32, 1.02);
+  }
+
+  @keyframes panelPopIn {
+    0% {
+      opacity: 0;
+      transform: scale(0.96) translateX(-20px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) translateX(0);
+    }
+  }
+
+  /* Window Title / Drag Bar */
+  .panel-header {
+    height: 52px;
+    min-height: 52px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    -webkit-app-region: drag;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Close Button (macOS style frosted pill) */
+  .btn-close {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .btn-close:hover {
+    background: rgba(239, 68, 68, 0.9);
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+  }
+
+  /* Brand / Source Badge */
+  .brand-badge {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #38bdf8;
+    letter-spacing: 0.2px;
+  }
+
+  .swan-mini-icon {
+    width: 14px;
+    height: 14px;
+    filter: drop-shadow(0 0 4px #38bdf8);
+  }
+
+  .header-center {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.3px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 180px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Copy Button */
+  .btn-copy {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    color: #f1f5f9;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-copy:hover {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.25);
+  }
+
+  .btn-copy.copied {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #34d399;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+  }
+
+  /* Scrollable Body Content */
+  .panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .panel-body::-webkit-scrollbar {
+    width: 6px;
+  }
+  .panel-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .panel-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+  }
+  .panel-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  /* Document Meta Header */
+  .doc-title {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #f8fafc;
+    letter-spacing: -0.3px;
+  }
+
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 11.5px;
+    color: #94a3b8;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .meta-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* Rendered Markdown Typography */
+  .markdown-body {
+    font-size: 13.5px;
+    line-height: 1.68;
+    color: #e2e8f0;
+  }
+
+  .markdown-body h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 18px 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .markdown-body h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #38bdf8;
+    margin: 16px 0 8px 0;
+  }
+  .markdown-body h3 {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #a855f7;
+    margin: 14px 0 6px 0;
+  }
+  .markdown-body p {
+    margin-bottom: 12px;
+  }
+  .markdown-body ul, .markdown-body ol {
+    margin: 8px 0 14px 22px;
+  }
+  .markdown-body li {
+    margin-bottom: 6px;
+  }
+  .markdown-body strong {
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .markdown-body em {
+    color: #cbd5e1;
+  }
+  .markdown-body blockquote {
+    margin: 12px 0;
+    padding: 10px 16px;
+    background: rgba(56, 189, 248, 0.08);
+    border-left: 3px solid #38bdf8;
+    border-radius: 4px;
+    color: #bae6fd;
+    font-size: 13px;
+  }
+  .markdown-body pre {
+    margin: 12px 0;
+    padding: 12px 16px;
+    background: rgba(2, 6, 23, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow-x: auto;
+    font-family: "SF Mono", Menlo, Consolas, Monaco, monospace;
+    font-size: 12px;
+    color: #f1f5f9;
+  }
+  .markdown-body code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Menlo, Consolas, Monaco, monospace;
+    font-size: 12px;
+    color: #38bdf8;
+  }
+  .markdown-body pre code {
+    background: transparent;
+    padding: 0;
+    color: #f1f5f9;
+  }
+  .markdown-body hr {
+    border: none;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 18px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="report-panel" id="panel">
+  <!-- Header / Window Controls -->
+  <div class="panel-header">
+    <div class="header-left">
+      <button class="btn-close" id="btn-close" title="Close Window">✕</button>
+      <div class="brand-badge" id="source-badge">
+        <svg class="swan-mini-icon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+        </svg>
+        <span id="source-label">Research Agent</span>
+      </div>
+    </div>
+
+    <div class="header-center" id="header-subtitle">Intelligence Report</div>
+
+    <div class="header-actions">
+      <button class="btn-copy" id="btn-copy" title="Copy Full Report">
+        <span id="copy-icon">📋</span>
+        <span id="copy-text">Copy</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Scrollable Report Body -->
+  <div class="panel-body">
+    <h1 class="doc-title" id="report-title">Research Summary</h1>
+    
+    <div class="meta-row">
+      <div class="meta-pill">
+        <span>⏱️</span>
+        <span id="meta-time">Just now</span>
+      </div>
+      <div class="meta-pill">
+        <span>📄</span>
+        <span id="meta-words">0 words</span>
+      </div>
+      <div class="meta-pill">
+        <span>✨</span>
+        <span>Verified Findings</span>
+      </div>
+    </div>
+
+    <div class="markdown-body" id="report-content">
+      <!-- Formatted content inserted dynamically -->
+    </div>
+  </div>
+</div>
+
+<script>
+  let rawContentText = "";
+
+  // Minimal fast Markdown parser
+  function parseMarkdown(md) {
+    if (!md) return "";
+    let html = md
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    // Code blocks
+    html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+      return `<pre><code>${code.trim()}</code></pre>`;
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Headers
+    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gim, '## $1</h2>');
+    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+
+    // Blockquotes
+    html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+    // Bold & Italics
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // Horizontal Rule
+    html = html.replace(/^---$/gim, '<hr>');
+
+    // Unordered Lists
+    html = html.replace(/^\s*[-*]\s+(.*)$/gim, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/gms, '<ul>$1</ul>');
+    // Fix nested ul tags
+    html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+    // Paragraphs
+    const lines = html.split('\n');
+    let inBlock = false;
+    const finalLines = [];
+
+    for (let line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        finalLines.push('');
+        continue;
+      }
+      if (trimmed.startsWith('<h') || trimmed.startsWith('<pre') || trimmed.startsWith('<blockquote') || trimmed.startsWith('<ul') || trimmed.startsWith('<li') || trimmed.startsWith('<hr')) {
+        finalLines.push(trimmed);
+      } else {
+        finalLines.push(`<p>${trimmed}</p>`);
+      }
+    }
+
+    return finalLines.join('\n');
+  }
+
+  /**
+   * Sets and renders report in the window.
+   */
+  window.setReport = function(title, content, source) {
+    rawContentText = content || "";
+    document.getElementById('report-title').textContent = title || "Report";
+    document.getElementById('source-label').textContent = source || "Swan Agent";
+    document.getElementById('header-subtitle').textContent = (title || "").slice(0, 24);
+
+    const now = new Date();
+    document.getElementById('meta-time').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const words = rawContentText.split(/\s+/).filter(Boolean).length;
+    document.getElementById('meta-words').textContent = `${words} words`;
+
+    document.getElementById('report-content').innerHTML = parseMarkdown(rawContentText);
+  };
+
+  // Close Button Handler
+  document.getElementById('btn-close').addEventListener('click', () => {
+    window.location.href = "swan://closeWindow";
+  });
+
+  // Copy Button Handler
+  document.getElementById('btn-copy').addEventListener('click', () => {
+    const copyText = `# ${document.getElementById('report-title').textContent}\n\n${rawContentText}`;
+    
+    // Copy to clipboard
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(copyText);
+    }
+    // Also notify native Cocoa layer to ensure clipboard is populated
+    window.location.href = "swan://copyContent";
+
+    // Visual feedback
+    const btn = document.getElementById('btn-copy');
+    const label = document.getElementById('copy-text');
+    const icon = document.getElementById('copy-icon');
+
+    btn.classList.add('copied');
+    label.textContent = "Copied!";
+    icon.textContent = "✓";
+
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      label.textContent = "Copy";
+      icon.textContent = "📋";
+    }, 2200);
+  });
+</script>
+</body>
+</html>

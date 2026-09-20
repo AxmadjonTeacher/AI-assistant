@@ -2324,6 +2324,8 @@ def launch_agent(agent_type: str, task: str, details: str = "") -> dict:
             return agent_manager.launch_document_agent(title=task, content=details, format=atype if atype in ("docx", "pdf") else "docx")
         elif atype in ["presentation", "slides", "pptx"]:
             return agent_manager.launch_presentation_agent(title=task, topic_or_content=details)
+        elif atype in ["research", "search", "gather_info", "web_search", "find_info", "info", "report"]:
+            return agent_manager.launch_research_agent(query=task, focus=details)
         return agent_manager.launch_generic_agent(agent_type=agent_type, task_description=task, details=details)
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -2368,8 +2370,88 @@ def get_agent_status(task_id: str = "") -> dict:
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+def point_on_screen(description: str = "", x: Optional[int] = None, y: Optional[int] = None, action: str = "point", duration: float = 3.8) -> dict:
+    """Deploys Swan's independent custom hand cursor sliding down from the top bezel notch
+
+    to point at, tap, or highlight a specific coordinate, button, code error, or region on screen.
+    """
+    try:
+        from pointer_overlay import get_pointer_overlay
+        overlay = get_pointer_overlay()
+        if not overlay:
+            return {"status": "error", "message": "Pointer overlay window is not available."}
+
+        # If coordinates are omitted, compute smart positions based on screen bounds and description
+        if x is None or y is None:
+            from Cocoa import NSScreen
+            screen = NSScreen.mainScreen()
+            w = screen.frame().size.width if screen else 1440
+            h = screen.frame().size.height if screen else 900
+            desc_l = (description or "").lower()
+            if any(k in desc_l for k in ["top right", "yuqori o'ng"]):
+                x, y = int(w * 0.82), int(h * 0.16)
+            elif any(k in desc_l for k in ["top left", "yuqori chap"]):
+                x, y = int(w * 0.16), int(h * 0.16)
+            elif any(k in desc_l for k in ["bottom right", "pastki o'ng"]):
+                x, y = int(w * 0.82), int(h * 0.82)
+            elif any(k in desc_l for k in ["bottom left", "pastki chap"]):
+                x, y = int(w * 0.16), int(h * 0.82)
+            elif any(k in desc_l for k in ["dock", "pastda", "bottom"]):
+                x, y = int(w * 0.50), int(h * 0.92)
+            elif any(k in desc_l for k in ["left", "chap"]):
+                x, y = int(w * 0.28), int(h * 0.48)
+            elif any(k in desc_l for k in ["right", "o'ng"]):
+                x, y = int(w * 0.72), int(h * 0.48)
+            else:
+                x, y = int(w * 0.50), int(h * 0.45)
+
+        overlay.point_at(x=int(x), y=int(y), duration=float(duration), action=action, label=description[:24])
+        return {
+            "status": "success",
+            "message": f"Pointer deployed from top bezel to point at ({x}, {y}): '{description}'."
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def search_and_gather_info(query: str, focus: str = "") -> dict:
+    """Launches an autonomous deep research & internet information gathering background agent.
+
+    When done, automatically presents structured findings in a movable, resizable transparent
+    window on the left side of the screen with a one-click copy button.
+    """
+    try:
+        from agent_manager import agent_manager
+        return agent_manager.launch_research_agent(query=query, focus=focus)
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def show_report_window(title: str, content: str, source: str = "Swan Intelligence") -> dict:
+    """Displays a transparent floating report window on the left side of the screen
+
+    containing rich formatted Markdown text with a one-click copy button.
+    """
+    try:
+        from report_window import get_report_window
+        win = get_report_window()
+        if win:
+            win.show_report(title=title, content=content, source=source)
+            return {"status": "success", "message": f"Report '{title}' displayed in floating window on left of screen."}
+        return {"status": "error", "message": "Report window unavailable."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # Dispatch table
 TOOL_HANDLERS = {
+    "point_on_screen": point_on_screen,
+    "point_at": point_on_screen,
+    "pointer": point_on_screen,
+    "point": point_on_screen,
+    "search_and_gather_info": search_and_gather_info,
+    "research_agent": search_and_gather_info,
+    "gather_info": search_and_gather_info,
+    "deep_research": search_and_gather_info,
+    "show_report_window": show_report_window,
+    "show_report": show_report_window,
     "transcribe_audio_file": transcribe_audio_file,
     "transcribe_audio": transcribe_audio_file,
     "transcribe": transcribe_audio_file,
@@ -3212,6 +3294,76 @@ def get_jarvis_tools() -> list[types.Tool]:
                     )
                 },
                 required=["title", "topic_or_content"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="point_on_screen",
+            description="Deploys Swan's independent cyber-hand cursor sliding down from the top notch/bezel to point at, tap, or highlight specific UI elements, buttons, errors, text, or coordinates on the user's screen. Retracts back into the top bezel after duration.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "description": types.Schema(
+                        type="STRING",
+                        description="Description of what to point to (e.g. 'the blue submit button', 'the compile error on line 42', 'top right corner')."
+                    ),
+                    "x": types.Schema(
+                        type="INTEGER",
+                        description="Optional exact screen X coordinate in pixels (0 is left)."
+                    ),
+                    "y": types.Schema(
+                        type="INTEGER",
+                        description="Optional exact screen Y coordinate in pixels (0 is top)."
+                    ),
+                    "action": types.Schema(
+                        type="STRING",
+                        description="Cursor gesture action: 'point', 'tap', or 'circle'. Defaults to 'point'."
+                    ),
+                    "duration": types.Schema(
+                        type="NUMBER",
+                        description="Duration in seconds to point on screen before retracting (default 3.8s)."
+                    )
+                },
+                required=["description"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="search_and_gather_info",
+            description="Launches an autonomous deep research background agent to search the internet, gather information, analyze findings, and automatically present an executive report in a floating transparent window on the left side of the screen with a one-click copy button.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "query": types.Schema(
+                        type="STRING",
+                        description="The research topic, question, or inquiry to investigate on the internet."
+                    ),
+                    "focus": types.Schema(
+                        type="STRING",
+                        description="Optional specific focus, aspects, or questions to emphasize."
+                    )
+                },
+                required=["query"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="show_report_window",
+            description="Displays a transparent floating report window on the left side of the screen with rich formatted Markdown text and a one-click copy button.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "title": types.Schema(
+                        type="STRING",
+                        description="Title of the report."
+                    ),
+                    "content": types.Schema(
+                        type="STRING",
+                        description="Detailed Markdown content of the report to display."
+                    ),
+                    "source": types.Schema(
+                        type="STRING",
+                        description="Optional source badge (e.g. 'Swan Intelligence', 'Research Agent')."
+                    )
+                },
+                required=["title", "content"]
             )
         ),
         types.FunctionDeclaration(

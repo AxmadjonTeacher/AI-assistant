@@ -134,6 +134,8 @@ from menu_bar import SwanMenuBar
 from settings_window import SettingsWindow
 from wake_word_detector import WakeWordDetector
 from audio_prompts import audio_prompts
+from pointer_overlay import get_pointer_overlay
+from report_window import get_report_window
 
 class SwanApp:
     def __init__(self):
@@ -161,6 +163,8 @@ class SwanApp:
         self.state_machine = AssistantStateMachine()
         self.state_machine.add_listener(self._on_state_machine_update)
         self.agent_hud = init_agent_hud()
+        self.pointer_overlay = get_pointer_overlay()
+        self.report_window = get_report_window()
         self.menu_bar = SwanMenuBar(
             on_ask_swan=self.trigger_assistant,
             on_mode_toggle=self._toggle_mode,
@@ -693,10 +697,17 @@ class SwanApp:
             return "Designing Slides..."
         elif name in ["generate_image", "create_image", "draw_image", "draw_picture", "make_picture"]:
             return "Creating Picture..."
-        elif name in ["edit_image", "modify_image", "change_image"]:
-            return "Editing Picture..."
+        elif name in ["point_on_screen", "point_at", "pointer", "point"]:
+            desc = (args or {}).get("description", "")
+            return f"Pointing to '{desc[:18]}'..." if desc else "Pointing on Screen 👆"
+        elif name in ["search_and_gather_info", "research_agent", "gather_info", "deep_research"]:
+            q = (args or {}).get("query", "")
+            return f"Researching '{q[:18]}'..." if q else "Researching Web 🌐"
+        elif name in ["show_report_window", "show_report"]:
+            t = (args or {}).get("title", "")
+            return f"Showing Report: {t[:16]}..." if t else "Displaying Report 📄"
         elif name in ["create_blender_scene", "build_blender_scene", "blender_scene"]:
-            return "Launching Blender Agent..."
+            return "Directing 3D Scene 🎬"
         elif name in ["launch_agent", "start_agent"]:
             agent_t = (args.get("agent_type") or "Agent").capitalize()
             return f"Launching {agent_t} Agent..."

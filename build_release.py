@@ -42,13 +42,15 @@ def main():
         f"--osx-bundle-identifier '{BUNDLE_ID}' "
         f"--add-data 'sounds:sounds' "
         f"--add-data 'models/vosk-model-small-en-us-0.15:models/vosk-model-small-en-us-0.15' "
-        f"--add-data 'hud_template.html:.' "
-        f"--add-data 'agent_hud_template.html:.' "
-        f"--add-data 'settings_template.html:.' "
-        f"--add-data 'swan_crystal_clean.png:.' "
-        f"--add-data 'swan_logo_crystal.png:.' "
-        f"--add-data 'swan_logo_transparent.png:.' "
-        f"--add-data 'cinematic_camera_rig.py:.' "
+        f"--add-data 'hud_template.html:.' " \
+        f"--add-data 'agent_hud_template.html:.' " \
+        f"--add-data 'settings_template.html:.' " \
+        f"--add-data 'pointer_template.html:.' " \
+        f"--add-data 'report_template.html:.' " \
+        f"--add-data 'swan_crystal_clean.png:.' " \
+        f"--add-data 'swan_logo_crystal.png:.' " \
+        f"--add-data 'swan_logo_transparent.png:.' " \
+        f"--add-data 'cinematic_camera_rig.py:.' " \
         f"--collect-all 'vosk' " \
         f"--collect-all 'docx' " \
         f"--collect-all 'reportlab' " \
@@ -68,6 +70,8 @@ def main():
         f"--hidden-import 'pynput' " \
         f"--hidden-import 'resource_helper' " \
         f"--hidden-import 'state_machine' " \
+        f"--hidden-import 'pointer_overlay' " \
+        f"--hidden-import 'report_window' " \
         f"--hidden-import 'docx' " \
         f"--hidden-import 'reportlab' " \
         f"--hidden-import 'pptx' " \
@@ -109,8 +113,8 @@ def main():
 
     pl["CFBundleDisplayName"] = APP_NAME
     pl["CFBundleIdentifier"] = BUNDLE_ID
-    pl["CFBundleShortVersionString"] = "1.2.0"
-    pl["CFBundleVersion"] = "1.2.0"
+    pl["CFBundleShortVersionString"] = "1.3.0"
+    pl["CFBundleVersion"] = "1.3.0"
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."
