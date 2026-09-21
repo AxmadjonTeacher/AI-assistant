@@ -540,25 +540,24 @@ class OfflineVoiceAssistant:
         """Clean shutdown trigger."""
         self.running = False
         self.audio.stop()
-        self.tts.speak("Dastur to'xtatildi. Hayr, Janob.", non_blocking=False)
         logger.info("👋 Offline Assistant terminated gracefully.")
         sys.exit(0)
 
     def run(self):
         """Main continuous execution loop."""
         print("=" * 65)
-        print("  🦢 100% FREE & FULLY OFFLINE OS VOICE ASSISTANT")
+        print("  🦢 100% FREE & FULLY OFFLINE OS VOICE ASSISTANT (SILENT MODE)")
         print("  - STT: Local faster-whisper (int8)")
         print(f"  - Brain: Local Ollama ({self.brain.model_name})")
-        print("  - Actions: pyautogui + subprocess")
-        print("  - TTS: Offline voice synthesis")
+        print("  - Actions: pyautogui + subprocess (Instant & Silent)")
+        print("  - Voice Answer: DISABLED (No robotic speech)")
         print("  - Privacy: 100% On-Device (Zero cloud tokens / Zero costs)")
         print("=" * 65)
         print("👉 Speak now (e.g. 'Open Safari', 'Telegramni och', 'Volume down', 'Exit')")
         print("👉 Press Ctrl+C at any time to exit.\n")
 
         self.audio.start()
-        self.tts.speak("Assalomu alaykum Janob, men tinglayapman.", non_blocking=True)
+        logger.info("🟢 Assistant active and listening silently.")
 
         while self.running:
             try:
@@ -583,25 +582,18 @@ class OfflineVoiceAssistant:
                 # 4. Parse intent with local Ollama
                 action_data = self.brain.parse_intent(transcript)
                 if not action_data:
-                    self.tts.speak("Kechirasiz, buyruqni tushunmadim.")
+                    logger.warning("Unrecognized command.")
                     continue
 
                 # Check if Ollama returned a shutdown action
                 if action_data.get("action") == "shutdown":
-                    voice_resp = action_data.get("voice_response", "Hayr, Janob.")
-                    self.tts.speak(voice_resp)
                     self.stop()
                     break
 
-                # 5. Execute OS action
+                # 5. Execute OS action instantly and silently
                 success, message = self.controller.execute(action_data)
-
-                # 6. Spoken voice response
-                voice_response = action_data.get("voice_response")
-                if voice_response:
-                    self.tts.speak(voice_response, non_blocking=False)
-                elif success:
-                    self.tts.speak("Bajarildi, Janob.")
+                if success:
+                    logger.info(f"✅ [Action Done]: {action_data.get('action')} -> {action_data.get('target')}")
 
             except Exception as e:
                 logger.error(f"Unexpected error in loop: {e}", exc_info=True)

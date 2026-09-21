@@ -773,6 +773,21 @@ class SwanApp:
                     self._active_action = decision.display_label
                     print(f"⚡ [Wake Suffix Reflex Trigger] '{suffix}' -> {decision.choice} ({decision.confidence:.2f})", flush=True)
                     threading.Thread(target=execute_reflex_action_sync, args=(decision,), daemon=True).start()
+                    if not decision.has_followup:
+                        # Instant silent completion! Show DONE on Dynamic Island and return immediately
+                        def _show_and_close():
+                            self.state_machine.on_action(decision.display_label)
+                            self.hud.show(state="action", status="DONE", subtitle=decision.display_label)
+                            def _finish():
+                                time.sleep(0.7)
+                                self.state_machine.on_idle()
+                                self.hud.hide(delay=0.2)
+                                self.wake_detector.reset()
+                                self.wake_detector.enabled = True
+                                self._busy = False
+                            threading.Thread(target=_finish, daemon=True).start()
+                        AppHelper.callAfter(_show_and_close)
+                        return
 
         if self._loop and self._loop.is_running():
             self._active_turn_future = asyncio.run_coroutine_threadsafe(
@@ -792,22 +807,13 @@ class SwanApp:
             if self.client:
                 asyncio.create_task(self.client.ensure_active_session())
 
-            # Spoken acknowledgment prompt matching selected language, voice and respectful setting
-            pcm_np, label = audio_prompts.get_random_prompt(
-                language=config.language,
-                voice_name=config.voice_name,
-                respectful=config.respectful_address
-            )
-            self._active_prompt_label = label
+            # Silent wake: Visual notch notification without robotic spoken prompt
+            self._active_prompt_label = "Listening"
             self._active_action = ""
-            print(f"🎙️ [Wake Word Detected] Acknowledging with: '{label}'", flush=True)
+            print("🎙️ [Wake Word Detected] Silent wake activated.", flush=True)
 
-            self.state_machine.on_wake(label)
-            self.hud.show(state="wake", status="SWAN", subtitle=label)
-
-            # Play voice acknowledgment non-blocking so mic recording starts immediately in parallel!
-            if pcm_np is not None:
-                self.audio_manager.play_prompt(pcm_np)
+            self.state_machine.on_wake("Listening")
+            self.hud.show(state="wake", status="SWAN", subtitle="")
 
             # Multi-turn conversational loop (back-and-forth)
             conversation_active = True
@@ -851,24 +857,23 @@ class SwanApp:
                 if self._cancel_requested:
                     break
 
+                # Check if native reflex was already dispatched mid-speech
+                if self._reflex_dispatched_this_turn:
+                    decision = self._reflex_dispatched_this_turn
+                    if not decision.has_followup:
+                        print(f"⚡ [Instant Reflex Completed] Native action '{decision.action_type}' finished mid-speech. Completing turn immediately without cloud lag.", flush=True)
+                        self.state_machine.on_action(decision.display_label)
+                        self.hud.show(state="action", status="DONE", subtitle=decision.display_label)
+                        await asyncio.sleep(0.70)
+                        self._reflex_dispatched_this_turn = None
+                        conversation_active = False
+                        break
+
                 has_command = (live_speech or include_preroll) and len(pcm_bytes) >= 4800 and self.audio_manager.has_speech(
                     pcm_bytes, energy_threshold=0.014, min_speech_duration=0.20
                 )
 
                 if has_command:
-                    # Check if native reflex was already dispatched and user has no secondary request
-                    if self._reflex_dispatched_this_turn:
-                        decision = self._reflex_dispatched_this_turn
-                        if not decision.has_followup:
-                            print(f"⚡ [Instant Reflex Completed] Native action '{decision.action_type}' finished mid-speech. Completing turn immediately without cloud lag.", flush=True)
-                            self.state_machine.on_action(decision.display_label)
-                            self.hud.show(state="action", status="DONE", subtitle=decision.display_label)
-                            await asyncio.sleep(0.75)
-                            last_reply = decision.display_label
-                            turn_number += 1
-                            self._reflex_dispatched_this_turn = None
-                            continue
-
                     last_reply = await self._process_gemini_turn(pcm_bytes)
                     if self._cancel_requested:
                         break
@@ -926,9 +931,11 @@ class SwanApp:
 
         # Real-time streaming Reflex Recognizer (System 1 - The Reflexes)
         command_rec = self.wake_detector.create_command_recognizer()
+        mid_speech_reflex_fired = False
 
         def _on_speech_chunk(chunk_bytes: bytes):
-            if self._cancel_requested or self._interrupted or not command_rec:
+            nonlocal mid_speech_reflex_fired
+            if self._cancel_requested or self._interrupted or not command_rec or mid_speech_reflex_fired:
                 return
             try:
                 text = ""
@@ -957,6 +964,8 @@ class SwanApp:
                             AppHelper.callAfter(_update_ui)
 
                             threading.Thread(target=execute_reflex_action_sync, args=(decision,), daemon=True).start()
+                            if not decision.has_followup:
+                                mid_speech_reflex_fired = True
             except Exception:
                 pass
 
@@ -969,6 +978,10 @@ class SwanApp:
         while time.time() - start_time < max_duration:
             if self._cancel_requested:
                 print("🛑 [Listen Cancelled] User dismissed.", flush=True)
+                break
+
+            if mid_speech_reflex_fired:
+                print("⚡ [Instant Reflex Completed] Action executed mid-speech. Breaking listen loop immediately.", flush=True)
                 break
 
             await asyncio.sleep(0.02)
@@ -1186,17 +1199,17 @@ class SwanApp:
                 nonlocal has_first_audio
                 if self._interrupted or self._cancel_requested:
                     return
+                # If an action was performed or in command mode, remain 100% silent (no robotic answer)
+                if self._active_action or config.mode == "command":
+                    return
                 if not has_first_audio:
                     has_first_audio = True
-                    # Only show the action if an action took place, otherwise show the acknowledgment label.
-                    # Strictly do NOT show raw transcription text in the notch HUD!
                     display_text = self._active_action if self._active_action else self._active_prompt_label
                     self.state_machine.on_speaking(display_text)
                 self.audio_manager.play_audio_chunk(chunk)
 
             def on_transcript_chunk(text: str):
                 self._active_transcript += text
-                # We strictly do NOT put streaming transcription text into the notch HUD!
                 if not self._active_action and not self._interrupted:
                     self.menu_bar.set_status("Swan: Speaking...")
 
@@ -1224,10 +1237,8 @@ class SwanApp:
                     except Exception:
                         pass
                 elif self._active_action and not self._interrupted and not self._cancel_requested:
-                    action_confirm = f"{self._active_action} bajarildi, Janob." if config.respectful_address else f"{self._active_action} bajarildi."
-                    self._active_transcript = action_confirm
-                    self._last_assistant_speech = action_confirm
-                    print(f"ℹ️ [Spoken Action Confirmation] {action_confirm}", flush=True)
+                    # Silent action confirmation
+                    print(f"ℹ️ [Silent Action Completed] {self._active_action}", flush=True)
             except asyncio.CancelledError:
                 print("🛑 [Turn Task] Gemini turn streaming aborted by user interruption.", flush=True)
                 if self._active_transcript:

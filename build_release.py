@@ -46,8 +46,6 @@ def main():
         f"--add-data 'agent_hud_template.html:.' " \
         f"--add-data 'settings_template.html:.' " \
         f"--add-data 'report_template.html:.' " \
-        f"--add-data 'swan_crystal_clean.png:.' " \
-        f"--add-data 'swan_logo_crystal.png:.' " \
         f"--add-data 'swan_logo_transparent.png:.' " \
         f"--add-data 'cinematic_camera_rig.py:.' " \
         f"--collect-all 'vosk' " \
@@ -113,8 +111,8 @@ def main():
 
     pl["CFBundleDisplayName"] = APP_NAME
     pl["CFBundleIdentifier"] = BUNDLE_ID
-    pl["CFBundleShortVersionString"] = "1.4.4"
-    pl["CFBundleVersion"] = "1.4.4"
+    pl["CFBundleShortVersionString"] = "1.4.5"
+    pl["CFBundleVersion"] = "1.4.5"
     pl["NSMicrophoneUsageDescription"] = "Swan microfoningiz orqali buyruqlarni real vaqtda eshitadi va bajaradi."
     pl["NSSpeechRecognitionUsageDescription"] = "Swan 'Hey Swan' uyg'onish so'zini aniqlash uchun nutqni tahlil qiladi."
     pl["NSAppleEventsUsageDescription"] = "Swan tizim buyruqlarini va ilovalarni boshqarish uchun ruxsat talab qiladi."

@@ -67,7 +67,7 @@ def test_ui_and_spoken_action_rules():
     from config import AppConfig
     cfg = AppConfig()
     cmd_inst = cfg.get_system_instruction(active_mode="command")
-    assert "SPOKEN CONFIRMATION" in cmd_inst
+    assert "SILENT EXECUTION" in cmd_inst or "JIM BAJARISH" in cmd_inst
     assert "Janob" in cmd_inst
     assert "John" in cmd_inst
 
